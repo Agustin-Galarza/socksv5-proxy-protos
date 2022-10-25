@@ -11,13 +11,14 @@ INC_DIRS := $(shell find $(SRC_DIR) -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 CC := gcc
-CFLAGS := -std=c11 -g -Wall
+CFLAGS := -std=c11 -g -Wall -fsanitize=address -fsanitize=undefined -fno-exceptions -fno-asynchronous-unwind-tables -fno-omit-frame-pointer
+LDFLAGS := -fsanitize=address -fsanitize=undefined
 
 all: $(TARGET_DIR)/$(COMPILE_TARGET)
 
 $(TARGET_DIR)/$(COMPILE_TARGET): $(OBJS)
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(OBJS) -o $@
+	$(CC) $(LDFLAGS) $(OBJS) -o $@
 	@chmod +x $<
 
 $(BUILD_DIR)/%.o: %.c
