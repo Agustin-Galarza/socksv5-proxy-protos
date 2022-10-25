@@ -39,6 +39,7 @@
 # Unwanted Folders
 bin/
 build/
+static_analysis_results/
 
 # Debug files
 *.dSYM/
