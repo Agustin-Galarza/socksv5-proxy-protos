@@ -11,7 +11,7 @@ INC_DIRS := $(shell find $(SRC_DIR) -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 CC := gcc
-CFLAGS := -std=c11 -g -Wall -fsanitize=address -fsanitize=undefined -fno-exceptions -fno-asynchronous-unwind-tables -fno-omit-frame-pointer
+CFLAGS := -std=c11 -g -Wall -fsanitize=address -fsanitize=undefined -fno-exceptions -fno-asynchronous-unwind-tables -fno-omit-frame-pointer -D_GNU_SOURCE
 LDFLAGS := -fsanitize=address -fsanitize=undefined
 
 all: $(TARGET_DIR)/$(COMPILE_TARGET)
