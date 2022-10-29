@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 
     struct server_config config_args;
     config_args.initial_connections = 3;
-    config_args.max_clients = 500;
+    config_args.max_clients = 400;
     config_args.port = "8080";
     config_args.version = IPV4;
 

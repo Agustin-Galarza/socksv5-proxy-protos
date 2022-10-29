@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "utils/representation.h"
+#include "utils/net_utils.h"
 
 char *print_address_info(struct addrinfo *aip, char addr[])
 {
@@ -73,17 +74,6 @@ print_address(struct sockaddr *address, char *addr_str)
             sprintf(addr_str + strlen(addr_str), ":%u", port);
     }
     return addr_str;
-}
-
-// TODO: move to another file
-struct sockaddr get_socket_addr(int socket_descriptor)
-{
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-    struct sockaddr *sock_addr_ptr = (struct sockaddr *)&client_addr;
-    // close connection to client
-    getpeername(socket_descriptor, sock_addr_ptr, &client_addr_len);
-    return *sock_addr_ptr;
 }
 
 char *print_address_from_descriptor(int socket_descriptor, char *addr_str)

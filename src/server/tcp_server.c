@@ -24,6 +24,8 @@
 
 #define NO_SOCKET -1
 
+#define ADDR_BUF_SIZE 256
+
 #define CLIENT_BUFFER_SIZE 1024
 
 #define CLOSE_CLIENT_BUFFERS                          \
@@ -120,6 +122,7 @@ bool run_server(struct server_config *config)
             if (client_count == config->max_clients)
             {
                 // there's no more capacity for new connections
+                log_warning("Refused new connection, max capacity of clients reached");
             }
             else
             {
@@ -142,14 +145,16 @@ bool run_server(struct server_config *config)
             }
         }
 
+        // manage client activity
         for (int i = 0; i < config->max_clients; i++)
         {
             socket_descriptor client_socket = client_sockets[i];
             if (!FD_ISSET(client_socket, &read_fd_set))
                 continue;
 
+            // read client message
             int ammount_read = read(client_socket,
-                                    buffer_get_data(client_buffers[i]),
+                                    buffer_get(client_buffers[i]),
                                     buffer_get_remaining_size(client_buffers[i]));
             if (ammount_read < 0)
             {
@@ -164,18 +169,18 @@ bool run_server(struct server_config *config)
             if (ammount_read == 0)
             {
                 // close connection to client
-                char addr_buf[200]; // TODO:remove magic number
+                char addr_buf[ADDR_BUF_SIZE];
                 log_info("Closing connection to %s", print_address_from_descriptor(client_socket, addr_buf));
 
                 close(client_socket);
                 client_sockets[i] = 0;
+                client_count--;
             }
             else
             {
-                // TODO: do something with message
-                char *msg = buffer_get_data(client_buffers[i]);
+                char *msg = buffer_get(client_buffers[i]);
                 msg[ammount_read] = '\0';
-                char addr_buf[200]; // TODO:remove magic number
+                char addr_buf[ADDR_BUF_SIZE];
                 log_info("New message from %s: %s",
                          print_address_from_descriptor(client_socket, addr_buf),
                          msg);
@@ -298,7 +303,7 @@ handle_new_connection(socket_descriptor server_socket)
         log_error("New connection refused: %s", strerror(errno));
         return -1;
     }
-    char addr_buf[200]; // TODO: remove magic number
+    char addr_buf[ADDR_BUF_SIZE];
     log_info("New connection to %s", print_address((struct sockaddr *)&client_addr, addr_buf));
 
     return new_connection;

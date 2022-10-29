@@ -27,7 +27,7 @@ inline size_t buffer_advance(struct buffer *buf, unsigned ammount)
     }
     return buffer_get_remaining_size(buf);
 }
-inline char *buffer_get_data(struct buffer *buf)
+inline char *buffer_get(struct buffer *buf)
 {
     return buf->data + buf->start;
 }
