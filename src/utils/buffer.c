@@ -9,8 +9,8 @@ struct buffer
 
 struct buffer *buffer_init(size_t size)
 {
-    struct buffer *buf = malloc(sizeof(struct buffer));
-    buf->data = malloc(size + 1);
+    struct buffer *buf = (struct buffer *)malloc(sizeof(struct buffer));
+    buf->data = (char *)malloc(size + 1);
     buf->start = 0;
     buf->size = size;
     buf->data[buf->size] = '\0';

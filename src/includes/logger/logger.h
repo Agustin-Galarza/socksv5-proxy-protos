@@ -17,17 +17,47 @@
 
 #define DEFAULT_FILE_NAME "logger.log" // redefine this value to change the default location.
 
-#define DEFAULT_CONFIG {.enabled = true,.color = NO_COLOR,.filename = ""}
-#define DEFAULT_ERROR_CONFIG {.enabled = true,.color = RED,.filename = ""}
-#define DEFAULT_DEBUG_CONFIG {.enabled = true,.color = GREEN,.filename = ""}
-#define DEFAULT_INFO_CONFIG {.enabled = true,.color = CYAN,.filename = ""}
-#define DEFAULT_WARNING_CONFIG {.enabled = true,.color = YELLOW,.filename = ""}
+#define DEFAULT_CONFIG                                     \
+    {                                                      \
+        .enabled = true, .color = NO_COLOR, .filename = "" \
+    }
+#define DEFAULT_ERROR_CONFIG                          \
+    {                                                 \
+        .enabled = true, .color = RED, .filename = "" \
+    }
+#define DEFAULT_DEBUG_CONFIG                            \
+    {                                                   \
+        .enabled = true, .color = GREEN, .filename = "" \
+    }
+#define DEFAULT_INFO_CONFIG                            \
+    {                                                  \
+        .enabled = true, .color = CYAN, .filename = "" \
+    }
+#define DEFAULT_WARNING_CONFIG                           \
+    {                                                    \
+        .enabled = true, .color = YELLOW, .filename = "" \
+    }
 
-#define DEFAULT_CONFIG_WITH_FILE {.enabled = true,.color = NO_COLOR,.filename = DEFAULT_FILE_NAME}
-#define DEFAULT_ERROR_CONFIG_WITH_FILE {.enabled = true,.color = RED,.filename = DEFAULT_FILE_NAME}
-#define DEFAULT_DEBUG_CONFIG_WITH_FILE {.enabled = true,.color = GREEN,.filename = DEFAULT_FILE_NAME}
-#define DEFAULT_INFO_CONFIG_WITH_FILE {.enabled = true,.color = CYAN,.filename = DEFAULT_FILE_NAME}
-#define DEFAULT_WARNING_CONFIG_WITH_FILE {.enabled = true,.color = YELLOW,.filename = DEFAULT_FILE_NAME}
+#define DEFAULT_CONFIG_WITH_FILE                                          \
+    {                                                                     \
+        .enabled = true, .color = NO_COLOR, .filename = DEFAULT_FILE_NAME \
+    }
+#define DEFAULT_ERROR_CONFIG_WITH_FILE                               \
+    {                                                                \
+        .enabled = true, .color = RED, .filename = DEFAULT_FILE_NAME \
+    }
+#define DEFAULT_DEBUG_CONFIG_WITH_FILE                                 \
+    {                                                                  \
+        .enabled = true, .color = GREEN, .filename = DEFAULT_FILE_NAME \
+    }
+#define DEFAULT_INFO_CONFIG_WITH_FILE                                 \
+    {                                                                 \
+        .enabled = true, .color = CYAN, .filename = DEFAULT_FILE_NAME \
+    }
+#define DEFAULT_WARNING_CONFIG_WITH_FILE                                \
+    {                                                                   \
+        .enabled = true, .color = YELLOW, .filename = DEFAULT_FILE_NAME \
+    }
 
 typedef enum level
 {
@@ -37,7 +67,8 @@ typedef enum level
     WARNING
 } LogLevel;
 
-struct log_level_config {
+struct log_level_config
+{
     bool enabled;
     char color[11];
     char filename[MAX_FILE_NAME_SIZE]; // relative or absolute path to log file for this level. Note that the logger does not create directories so this value must represent a valid path.
@@ -52,10 +83,10 @@ struct logger_init_args
 
 //! All functions return true on error, false on success
 
-void logger_init(struct logger_init_args* args);
+void logger_init(struct logger_init_args *args);
 void logger_cleanup();
-bool log_info(char* fmt_msg, ...);
-bool log_error(char* fmt_msg, ...);
-bool log_warning(char* fmt_msg, ...);
-bool log_debug(char* fmt_msg, ...);
+bool log_info(const char *fmt_msg, ...);
+bool log_error(const char *fmt_msg, ...);
+bool log_warning(const char *fmt_msg, ...);
+bool log_debug(const char *fmt_msg, ...);
 #endif

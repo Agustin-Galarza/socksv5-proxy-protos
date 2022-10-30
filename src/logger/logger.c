@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "logger.h"
+#include "logger/logger.h"
 
 #define FILE_APPEND_CREATE "a"
 
@@ -76,7 +76,7 @@ bool is_level_enabled(LogLevel level)
     return status.level[level].enabled;
 }
 
-bool _log_file(LogLevel level, char *fmt_msg, va_list argp)
+bool _log_file(LogLevel level, const char *fmt_msg, va_list argp)
 {
     if (!is_file_enabled(level))
         return false;
@@ -110,7 +110,7 @@ bool _log_file(LogLevel level, char *fmt_msg, va_list argp)
     return false;
 }
 
-bool _log_stderr(LogLevel level, char *fmt, va_list argp)
+bool _log_stderr(LogLevel level, const char *fmt, va_list argp)
 {
     if (!status.is_stderr_enabled)
         return false;
@@ -150,7 +150,7 @@ void set_context(LogLevel level)
     // nop
 }
 
-bool log_info(char *fmt_msg, ...)
+bool log_info(const char *fmt_msg, ...)
 {
     if (!is_level_enabled(INFO))
         return false;
@@ -174,7 +174,7 @@ bool log_info(char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_error(char *fmt_msg, ...)
+bool log_error(const char *fmt_msg, ...)
 {
     if (!is_level_enabled(ERROR))
         return false;
@@ -198,7 +198,7 @@ bool log_error(char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_warning(char *fmt_msg, ...)
+bool log_warning(const char *fmt_msg, ...)
 {
     if (!is_level_enabled(WARNING))
         return false;
@@ -222,7 +222,7 @@ bool log_warning(char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_debug(char *fmt_msg, ...)
+bool log_debug(const char *fmt_msg, ...)
 {
     if (!is_level_enabled(DEBUG))
         return false;

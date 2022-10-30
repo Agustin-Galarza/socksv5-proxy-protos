@@ -10,9 +10,13 @@ OBJS := $(SRCS:%.c=$(BUILD_DIR)/%.o)
 INC_DIRS := $(shell find $(SRC_DIR) -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
+ASAN_FLAGS := -fsanitize=address -fsanitize=undefined -fno-asynchronous-unwind-tables -fno-omit-frame-pointer
+ASAN_LDFLAGS := -fsanitize=address -fsanitize=undefined
+
 CC := gcc
-CFLAGS := -std=c11 -g -Wall -fsanitize=address -fsanitize=undefined -fno-exceptions -fno-asynchronous-unwind-tables -fno-omit-frame-pointer -D_GNU_SOURCE
-LDFLAGS := -fsanitize=address -fsanitize=undefined
+CFLAGS := -std=c11 -g -Wall -fno-exceptions -D_GNU_SOURCE
+CFLAGS += $(ASAN_FLAGS)
+LDFLAGS := $(ASAN_LDFLAGS)
 
 all: $(TARGET_DIR)/$(COMPILE_TARGET)
 

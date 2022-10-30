@@ -1,6 +1,7 @@
 #ifndef TCPSV_H_
 #define TCPSV_H_
 #include <stdbool.h>
+#include <stddef.h>
 
 enum ip_version
 {
@@ -11,9 +12,10 @@ enum ip_version
 struct server_config
 {
     size_t max_clients;
-    char *port;
+    const char *port;
     enum ip_version version;
     int initial_connections;
+    const char *logs_filename;
 };
 
 // returns TRUE on error, FALSE, otherwhise
