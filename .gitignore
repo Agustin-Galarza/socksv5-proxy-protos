@@ -59,3 +59,5 @@ dkms.conf
 
 # config files
 compile_commands.json
+
+.vscode
