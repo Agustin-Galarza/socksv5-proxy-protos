@@ -2,10 +2,10 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "utils/representation.h"
 #include "utils/net_utils.h"
@@ -80,4 +80,17 @@ char *print_address_from_descriptor(int socket_descriptor, char *addr_str)
 {
     struct sockaddr addr = get_socket_addr(socket_descriptor);
     return print_address(&addr, addr_str);
+}
+
+char *get_datetime_string(char *datetime_str)
+{
+    time_t t = time(NULL);
+    // localtime return a pointer to a static resource so it must NOT be freed
+    struct tm *tm = localtime(&t);
+    // Writes time into format like 'Thu Apr 14 22:39:03 2016'
+    // see https://stackoverflow.com/questions/1442116/how-to-get-the-date-and-time-values-in-a-c-program
+    if (strftime(datetime_str, TIME_FMT_STR_MAX_SIZE, "%c", tm) == 0)
+        datetime_str[0] = '\0';
+
+    return datetime_str;
 }
