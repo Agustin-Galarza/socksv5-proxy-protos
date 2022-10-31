@@ -35,11 +35,11 @@ size_t buffer_mark_read(struct buffer *buf, unsigned ammount)
     }
     return buffer_get_remaining_read_size(buf);
 }
-inline char *buffer_read(struct buffer *buf)
+inline char *buffer_get_to_read(struct buffer *buf)
 {
     return buf->data + buf->chars_read;
 }
-inline char *buffer_append(struct buffer *buf)
+inline char *buffer_get_to_write(struct buffer *buf)
 {
     return buf->data + buf->chars_written;
 }

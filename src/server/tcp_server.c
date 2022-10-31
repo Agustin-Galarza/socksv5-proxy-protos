@@ -9,6 +9,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <signal.h>
+#include <stdarg.h>
 
 #include "server/tcp_server.h"
 #include "logger/logger.h"
@@ -49,10 +51,16 @@ FILE *logs_file;
  * @brief buffer to store all the user activity logs
  */
 struct buffer *logs_buffer;
+/**
+ * @brief defines if the server should keep running
+ */
+bool server_active = true;
 
 /*******************************************
 |          Function declarations          |
 *******************************************/
+
+void handle_sig_kill(int signum);
 
 socket_descriptor
 create_passive_socket(struct server_config *config);
@@ -71,7 +79,9 @@ handle_new_connection(socket_descriptor server_socket);
 
 bool flush_logs();
 
-bool add_new_client_log(socket_descriptor new_client_fd);
+bool add_new_client_log(socket_descriptor client_fd);
+
+bool add_disconnected_client_log(socket_descriptor client_fd);
 
 // Parses msg and returns an action to perform. Returns -1 on error
 enum command parse_client_message(char *msg,
@@ -80,12 +90,18 @@ enum command parse_client_message(char *msg,
 
 bool write_to_client(socket_descriptor client_socket, struct buffer *client_buffer);
 
+bool write_server_log(const char *log_msg_fmt, ...);
+
 /**********************************************
 |          Function Implementations          |
 **********************************************/
 
 bool run_server(struct server_config *config)
 {
+    signal(SIGINT, handle_sig_kill);
+    signal(SIGKILL, handle_sig_kill);
+    signal(SIGTERM, handle_sig_kill);
+
     bool error = false;
     // Create all buffers to store client message data
     struct buffer **client_buffers = malloc(sizeof(struct buffer *) * config->max_clients);
@@ -107,6 +123,17 @@ bool run_server(struct server_config *config)
 
     size_t client_count = 0;
 
+    // Starting server
+    char *time_msg = malloc(TIME_FMT_STR_MAX_SIZE);
+    get_datetime_string(time_msg);
+    if (write_server_log("Starting server on %s\n", time_msg))
+    {
+        log_error("Could not write server log");
+        error = true;
+        goto close_after_logs_buffer;
+    }
+    free(time_msg);
+
     socket_descriptor server_socket = create_passive_socket(config);
 
     if (server_socket == NO_SOCKET)
@@ -124,8 +151,6 @@ bool run_server(struct server_config *config)
     }
 
     log_info("Server waiting for connections on port %s", config->port);
-
-    bool server_active = true;
 
     for (; server_active;)
     {
@@ -197,7 +222,7 @@ bool run_server(struct server_config *config)
             if (FD_ISSET(client_socket, &read_fd_set))
             {
                 // read client message
-                char *msg = buffer_append(client_buffer);
+                char *msg = buffer_get_to_write(client_buffer);
                 int ammount_read = read(client_socket,
                                         msg,
                                         buffer_get_remaining_write_size(client_buffer));
@@ -214,6 +239,8 @@ bool run_server(struct server_config *config)
                     // close connection to client
                     char addr_buf[ADDR_BUF_SIZE];
                     log_info("Closing connection to %s", print_address_from_descriptor(client_socket, addr_buf));
+
+                    add_disconnected_client_log(client_socket);
 
                     buffer_clear(client_buffer);
                     close(client_socket);
@@ -238,9 +265,12 @@ bool run_server(struct server_config *config)
                         char datetime_str[TIME_FMT_STR_MAX_SIZE];
                         char addr_str[ADDR_BUF_SIZE];
 
-                        log_info("Stopping server at %s by order of %s",
+                        log_info("Stopping server on %s by order of %s",
                                  get_datetime_string(datetime_str),
                                  print_address_from_descriptor(client_socket, addr_str));
+                        write_server_log("Stopping server on %s by order of %s",
+                                         get_datetime_string(datetime_str),
+                                         print_address_from_descriptor(client_socket, addr_str));
                         break;
                     case ECHO:
 
@@ -269,17 +299,18 @@ bool run_server(struct server_config *config)
 close_after_server_socket:
     close(server_socket);
 close_after_logs_buffer:
+    flush_logs(); // try to flush logs before closing
     buffer_close(logs_buffer);
-    // close_after_logs_file:
+close_after_logs_file:
     fclose(logs_file);
-    // close_after_client_sockets:
+close_after_client_sockets:
     for (size_t i = 0; i < config->max_clients; i++)
     {
         if (client_sockets[i] > 0)
             close(client_sockets[i]);
     }
     free(client_sockets);
-    // close_after_client_buffers:
+close_after_client_buffers:
     for (size_t i = 0; i < config->max_clients; i++)
     {
         buffer_close(client_buffers[i]);
@@ -413,12 +444,12 @@ handle_new_connection(socket_descriptor server_socket)
     return new_connection;
 }
 
-bool add_new_client_log(socket_descriptor new_client_fd)
+bool add_new_client_log(socket_descriptor client_fd)
 {
     char client_address_str[ADDR_BUF_SIZE];
     char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
 
-    print_address_from_descriptor(new_client_fd, client_address_str);
+    print_address_from_descriptor(client_fd, client_address_str);
 
     get_datetime_string(time_fmt_str);
     if (time_fmt_str[0] == '\0')
@@ -427,24 +458,39 @@ bool add_new_client_log(socket_descriptor new_client_fd)
         return true;
     }
 
-    char *log_str = buffer_append(logs_buffer);
-    ssize_t max_write_size = buffer_get_remaining_write_size(logs_buffer);
-
-    ssize_t chars_written = snprintf(
-        log_str,
-        max_write_size,
-        "New connection from %s at %s\n", client_address_str, time_fmt_str);
-
-    if (chars_written < 0 || chars_written > max_write_size)
+    if (write_server_log("New connection from %s on %s\n", client_address_str, time_fmt_str))
+    {
         return true;
-    buffer_mark_written(logs_buffer, chars_written);
+    }
+
+    return false;
+}
+
+bool add_disconnected_client_log(socket_descriptor client_fd)
+{
+    char client_address_str[ADDR_BUF_SIZE];
+    char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
+
+    print_address_from_descriptor(client_fd, client_address_str);
+
+    get_datetime_string(time_fmt_str);
+    if (time_fmt_str[0] == '\0')
+    {
+        log_error("Error while trying to generate datetime string");
+        return true;
+    }
+
+    if (write_server_log("Client %s disconnected on %s\n", client_address_str, time_fmt_str))
+    {
+        return true;
+    }
 
     return false;
 }
 
 bool flush_logs()
 {
-    char *msg = buffer_read(logs_buffer);
+    char *msg = buffer_get_to_read(logs_buffer);
     ssize_t msg_size = strlen(msg);
     if (msg_size != 0)
     {
@@ -478,7 +524,7 @@ enum command parse_client_message(char *msg, size_t msg_size, socket_descriptor 
 
 bool write_to_client(socket_descriptor client_socket, struct buffer *client_buffer)
 {
-    char *msg = buffer_read(client_buffer);
+    char *msg = buffer_get_to_read(client_buffer);
     ssize_t msg_size = strlen(msg);
     if (msg_size != 0)
     {
@@ -495,5 +541,39 @@ bool write_to_client(socket_descriptor client_socket, struct buffer *client_buff
             buffer_clear(client_buffer);
         }
     }
+    return false;
+}
+
+void handle_sig_kill(int signum)
+{
+    char datetime_str[TIME_FMT_STR_MAX_SIZE];
+    get_datetime_string(datetime_str);
+
+    char log_msg[LOGS_BUFFER_SIZE];
+    snprintf(log_msg, LOGS_BUFFER_SIZE, "Server abruptly stopped on %s by %s", get_datetime_string(datetime_str), strsignal(signum));
+
+    log_warning(log_msg);
+    fprintf(logs_file, "%s\n", log_msg);
+    fflush(logs_file);
+
+    server_active = false;
+}
+
+bool write_server_log(const char *log_msg_fmt, ...)
+{
+    va_list argp;
+    va_start(argp, log_msg_fmt);
+
+    size_t remaining_size = buffer_get_remaining_write_size(logs_buffer);
+
+    size_t chars_written = vsnprintf(buffer_get_to_write(logs_buffer), remaining_size, log_msg_fmt, argp);
+    if (chars_written < 0)
+    {
+        va_end(argp);
+        return true;
+    }
+    buffer_mark_written(logs_buffer, chars_written);
+
+    va_end(argp);
     return false;
 }
