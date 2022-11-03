@@ -2,7 +2,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "utils/parser_utils.h"
+#include "parser/parser_utils.h"
 
 const char *
 parser_utils_strcmpi_event(const enum string_cmp_event_types type)
