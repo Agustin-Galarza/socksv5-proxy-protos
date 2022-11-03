@@ -16,6 +16,7 @@
 #include "logger/logger.h"
 #include "utils/buffer.h"
 #include "utils/representation.h"
+#include "utils/selector.h"
 
 /*********************************
 |          Definitions          |
@@ -37,6 +38,28 @@ enum command
 {
     CLOSE = 0,
     ECHO
+};
+
+struct server_data
+{
+    size_t max_clients;
+    socket_descriptor fd;
+    size_t client_count;
+} server_data;
+
+/**
+ *              --------
+ * Client =====| Proxy |====== Remote
+ *             -------
+ *    ---->  |write_buffer| ----->
+ *   <----  |read_buffer|  <-----
+ */
+struct client_data
+{
+    // Buffer used to write from Client to Remote
+    struct buffer *write_buffer;
+    // Buffer used to wrte from Remote to Client
+    struct buffer *read_buffer;
 };
 
 /**************************************
@@ -63,7 +86,7 @@ bool server_active = true;
 void handle_sig_kill(int signum);
 
 socket_descriptor
-create_passive_socket(struct server_config *config);
+server_init(struct server_config *config);
 
 // returns max socket descripor on success
 socket_descriptor
@@ -92,6 +115,29 @@ bool write_to_client(socket_descriptor client_socket, struct buffer *client_buff
 
 bool write_server_log(const char *log_msg_fmt, ...);
 
+struct client_data *generate_new_client_data();
+
+void free_client_data(struct client_data *data);
+
+bool add_new_client(socket_descriptor client, fd_selector selector);
+
+void server_handle_read(struct selector_key *key);
+
+void handle_file_write(struct selector_key *key);
+
+void client_handle_read(struct selector_key *key);
+
+void client_handle_write(struct selector_key *key);
+
+void client_handle_close(struct selector_key *key);
+
+struct fd_handler client_handlers = {
+    .handle_read = client_handle_read,
+    .handle_write = client_handle_write,
+    .handle_block = NULL,
+    .handle_close = client_handle_close,
+};
+
 /**********************************************
 |          Function Implementations          |
 **********************************************/
@@ -103,17 +149,18 @@ bool run_server(struct server_config *config)
     signal(SIGTERM, handle_sig_kill);
 
     bool error = false;
-    // Create all buffers to store client message data
-    struct buffer **client_buffers = malloc(sizeof(struct buffer *) * config->max_clients);
-    for (size_t i = 0; i < config->max_clients; i++)
-    {
-        struct buffer *client_buffer = malloc(sizeof(struct buffer));
-        client_buffers[i] = client_buffer;
-        buffer_init(client_buffers[i], CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
-    }
+
+    // // Create all buffers to store client message data
+    // struct buffer **client_buffers = malloc(sizeof(struct buffer *) * config->max_clients);
+    // for (size_t i = 0; i < config->max_clients; i++)
+    // {
+    //     struct buffer *client_buffer = malloc(sizeof(struct buffer));
+    //     client_buffers[i] = client_buffer;
+    //     buffer_init(client_buffers[i], CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
+    // }
+
     // set up descriptors and fd of clients
-    fd_set read_fd_set;
-    fd_set write_fd_set;
+
     size_t client_sockets_alloc_size = sizeof(socket_descriptor *) * config->max_clients;
     socket_descriptor *client_sockets = malloc(client_sockets_alloc_size); // init client sockets descriptors array and set everything to 0
     memset(client_sockets, 0, client_sockets_alloc_size);
@@ -124,7 +171,9 @@ bool run_server(struct server_config *config)
     logs_buffer = malloc(sizeof(struct buffer));
     buffer_init(logs_buffer, LOGS_BUFFER_SIZE, malloc(LOGS_BUFFER_SIZE));
 
-    size_t client_count = 0;
+    fd_selector selector;
+
+#define END goto close_after_logs_buffer
 
     // Starting server
     char *time_msg = malloc(TIME_FMT_STR_MAX_SIZE);
@@ -133,171 +182,113 @@ bool run_server(struct server_config *config)
     {
         log_error("Could not write server log");
         error = true;
-        goto close_after_logs_buffer;
+        END;
     }
     free(time_msg);
 
-    socket_descriptor server_socket = create_passive_socket(config);
+    socket_descriptor server_socket = server_init(config);
 
     if (server_socket == NO_SOCKET)
     {
         error = true;
-        goto close_after_logs_buffer;
+        END;
     }
+
+#undef END
+#define END goto close_after_server_socket
 
     if (listen(server_socket, config->initial_connections) != 0)
     {
         log_error("Could not listen to port %s: %s", config->port, strerror(errno));
 
         error = true;
-        goto close_after_server_socket;
+        END;
     }
 
     log_info("Server waiting for connections on port %s", config->port);
 
+    if (selector_fd_set_nio(server_socket) == -1)
+    {
+        log_error("Could not handle server socket flags: %s", strerror(errno));
+        error = true;
+        END;
+    }
+
+    // inicializamos el selector
+    const struct selector_init init_args = {
+        .select_timeout = {
+            .tv_nsec = 0,
+            .tv_sec = 10},
+        .signal = SIGALRM};
+
+    if (selector_init(&init_args))
+    {
+        log_error("Could not initialize selector library");
+
+        error = true;
+        END;
+    }
+
+#undef END
+#define END goto close_after_selector_init
+
+    selector = selector_new(config->max_clients);
+    if (selector == NULL)
+    {
+        log_error("Could not create new selector");
+
+        error = true;
+        END;
+    }
+
+#undef END
+#define END goto close_after_selector
+
+    // en un principio registramos sólo al servidor
+    const struct fd_handler server_handlers = {
+        .handle_read = server_handle_read,
+        .handle_write = NULL,
+        .handle_close = NULL,
+    };
+
+    selector_status status = selector_register(selector, server_socket, &server_handlers, OP_READ, &server_data);
+    if (status != SELECTOR_SUCCESS)
+    {
+        log_error("Could not register server socket");
+
+        error = true;
+        END;
+    }
+
+    const struct fd_handler logs_file_handlers = {
+        .handle_read = NULL,
+        .handle_write = handle_file_write,
+        .handle_close = NULL,
+    };
+
+    status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, NULL);
+    if (status != SELECTOR_SUCCESS)
+    {
+        log_error("Could not register logs file");
+
+        error = true;
+        END;
+    }
+
     for (; server_active;)
     {
-        // configure descriptors
-        socket_descriptor max_socket_descriptor =
-            config_socket_descriptors(&read_fd_set, &write_fd_set, server_socket, client_sockets, logs_file_fd, config->max_clients);
-
-        // TODO: add timeout and signal management
-        if (pselect(max_socket_descriptor + 1, &read_fd_set, &write_fd_set, NULL, NULL, NULL) < 0 && errno != EINTR)
+        status = selector_select(selector);
+        if (status != SELECTOR_SUCCESS)
         {
-            log_error("Error while waiting for activity");
-
-            error = true;
-            goto close_after_server_socket;
-        }
-
-        if (FD_ISSET(server_socket, &read_fd_set))
-        {
-            if (client_count == config->max_clients)
-            {
-                // there's no more capacity for new connections
-                log_warning("Refused new connection, max capacity of clients reached");
-            }
-            else
-            {
-                socket_descriptor new_client = handle_new_connection(server_socket);
-
-                if (new_client > 0)
-                {
-                    // log new client. Write message into buffer to write when file is ready
-                    if (add_new_client_log(new_client))
-                    {
-                        log_error("Could not generate new client log");
-
-                        error = true;
-                        goto close_after_server_socket;
-                    }
-                    // add new client to array
-                    for (size_t i = 0; i < config->max_clients; i++)
-                    {
-                        if (client_sockets[i] == 0)
-                        {
-                            client_sockets[i] = new_client;
-                            break;
-                        }
-                    }
-                    client_count++;
-                }
-            }
-        }
-
-        if (FD_ISSET(logs_file_fd, &write_fd_set))
-        {
-            if (flush_logs())
-            {
-                log_error("Could not write into logs file");
-
-                error = true;
-                goto close_after_server_socket;
-            }
-        }
-
-        // manage client activity
-        for (size_t i = 0; i < config->max_clients; i++)
-        {
-            socket_descriptor client_socket = client_sockets[i];
-            struct buffer *client_buffer = client_buffers[i];
-
-            if (FD_ISSET(client_socket, &read_fd_set))
-            {
-                // read client message
-                size_t max_write = 0;
-                uint8_t *msg = buffer_write_ptr(client_buffer, &max_write);
-                int ammount_read = read(client_socket, msg, max_write);
-                if (ammount_read < 0)
-                {
-                    log_error("Could not read from client with descriptor %d", client_socket);
-
-                    error = true;
-                    goto close_after_server_socket;
-                }
-
-                if (ammount_read == 0)
-                {
-                    // close connection to client
-                    char addr_buf[ADDR_BUF_SIZE];
-                    log_info("Closing connection to %s", print_address_from_descriptor(client_socket, addr_buf));
-
-                    add_disconnected_client_log(client_socket);
-
-                    buffer_reset(client_buffer);
-                    close(client_socket);
-                    FD_CLR(client_socket, &write_fd_set);
-                    client_sockets[i] = 0;
-                    client_count--;
-                }
-                else
-                {
-                    buffer_write_adv(client_buffer, ammount_read);
-                    msg[ammount_read] = '\0';
-
-                    char addr_buf[ADDR_BUF_SIZE];
-                    log_info("New message from %s: %s",
-                             print_address_from_descriptor(client_socket, addr_buf),
-                             msg);
-
-                    switch (parse_client_message(msg, ammount_read, client_socket))
-                    {
-                    case CLOSE:
-                        server_active = false;
-                        char datetime_str[TIME_FMT_STR_MAX_SIZE];
-                        char addr_str[ADDR_BUF_SIZE];
-
-                        log_info("Stopping server on %s by order of %s",
-                                 get_datetime_string(datetime_str),
-                                 print_address_from_descriptor(client_socket, addr_str));
-                        write_server_log("Stopping server on %s by order of %s",
-                                         get_datetime_string(datetime_str),
-                                         print_address_from_descriptor(client_socket, addr_str));
-                        break;
-                    case ECHO:
-
-                        break;
-                    default:
-                        // Error
-                        error = true;
-                        goto close_after_server_socket;
-                        break;
-                    }
-                }
-            }
-            if (FD_ISSET(client_socket, &write_fd_set))
-            {
-                if (write_to_client(client_socket, client_buffer))
-                {
-                    log_error("Could not write to client with descriptor %d", client_socket);
-
-                    error = true;
-                    goto close_after_server_socket;
-                }
-            }
+            log_error("Problems while executing selector");
+            END;
         }
     }
 
+close_after_selector_init:
+    selector_destroy(selector);
+close_after_selector:
+    selector_close();
 close_after_server_socket:
     close(server_socket);
 close_after_logs_buffer:
@@ -313,17 +304,10 @@ close_after_client_sockets:
             close(client_sockets[i]);
     }
     free(client_sockets);
-close_after_client_buffers:
-    for (size_t i = 0; i < config->max_clients; i++)
-    {
-        free(client_buffers[i]->data);
-        free(client_buffers[i]);
-    }
-    free(client_buffers);
     return error;
 }
 
-socket_descriptor create_passive_socket(struct server_config *config)
+socket_descriptor server_init(struct server_config *config)
 {
     errno = 0;
 
@@ -340,7 +324,7 @@ socket_descriptor create_passive_socket(struct server_config *config)
     {
         log_error("Could not parse server config: %s", strerror(errno));
 
-        freeaddrinfo(addr_list); // TODO: define cleanup management
+        freeaddrinfo(addr_list);
         return NO_SOCKET;
     }
     if (addr_list == NULL)
@@ -388,6 +372,9 @@ socket_descriptor create_passive_socket(struct server_config *config)
         return NO_SOCKET;
     }
 
+    server_data.client_count = 0;
+    server_data.max_clients = config->max_clients;
+    server_data.fd = server_socket;
     freeaddrinfo(addr_list);
     return server_socket;
 }
@@ -580,4 +567,179 @@ bool write_server_log(const char *log_msg_fmt, ...)
 
     va_end(argp);
     return false;
+}
+
+struct client_data *generate_new_client_data()
+{
+    struct client_data *data = malloc(sizeof(struct client_data));
+
+    data->read_buffer = malloc(sizeof(struct buffer));
+    buffer_init(data->read_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
+
+    data->write_buffer = malloc(sizeof(struct buffer));
+    buffer_init(data->write_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
+
+    return data;
+}
+
+void free_client_data(struct client_data *data)
+{
+    if (data == NULL)
+        return;
+
+    if (data->read_buffer != NULL)
+    {
+        free(data->read_buffer->data);
+        free(data->read_buffer);
+    }
+    if (data->write_buffer != NULL)
+    {
+        free(data->write_buffer->data);
+        free(data->write_buffer);
+    }
+    free(data);
+}
+
+bool add_new_client(socket_descriptor client, fd_selector selector)
+{
+    // TODO: manage states: we should only want to read from a client after it's connected. Then we'll handle reads and writes as every connection changes states.
+    // At first we read from the client, then we re-write the string to the client
+    if (selector_register(selector, client, &client_handlers, OP_READ, generate_new_client_data()))
+    {
+        return true;
+    }
+    server_data.client_count++;
+    return false;
+}
+
+void server_handle_read(struct selector_key *key)
+{
+    struct server_data *data = key->data;
+    socket_descriptor server_socket = key->fd;
+    fd_selector selector = key->s;
+
+    if (data->client_count == data->max_clients)
+    {
+        // there's no more capacity for new connections
+        log_warning("Refused new connection, max capacity of clients reached");
+    }
+    else
+    {
+        socket_descriptor new_client = handle_new_connection(server_socket);
+
+        if (new_client > 0)
+        {
+            // log new client. Write message into buffer to write when file is ready
+            if (add_new_client_log(new_client))
+            {
+                log_error("Could not generate new client log");
+                return;
+            }
+            // add new client to array
+            if (add_new_client(new_client, selector))
+            {
+                log_error("Could not register client");
+                return;
+            }
+        }
+    }
+}
+
+void handle_file_write(struct selector_key *key)
+{
+    // TODO pass buffer through data and remove it as global variable
+    if (flush_logs())
+    {
+        log_error("Could not write into logs file");
+    }
+}
+
+// Todo: implement client handlers
+void client_handle_read(struct selector_key *key)
+{
+    fd_selector selector = key->s;
+
+    socket_descriptor client = key->fd;
+    struct buffer *client_buffer = ((struct client_data *)key->data)->write_buffer;
+
+    char addr_str[ADDR_BUF_SIZE];
+    print_address_from_descriptor(client, addr_str);
+
+    size_t max_write = 0;
+    uint8_t *msg = buffer_write_ptr(client_buffer, &max_write);
+
+    if (max_write == 0)
+        return;
+    int ammount_read = read(client, msg, max_write);
+    switch (ammount_read)
+    {
+    case -1:
+        log_error("Could not read from client %s", addr_str);
+        return;
+    case 0:
+        log_info("Closing connection to %s", addr_str);
+        add_disconnected_client_log(client);
+
+        selector_unregister_fd(selector, client);
+        break;
+    default:
+        buffer_write_adv(client_buffer, ammount_read);
+        msg[ammount_read] = '\0';
+
+        log_info("New message from %s: %s", addr_str, msg);
+        struct buffer *echo_buffer;
+        switch (parse_client_message(msg, ammount_read, client))
+        {
+        case CLOSE:
+            server_active = false;
+            char datetime_str[TIME_FMT_STR_MAX_SIZE];
+
+            log_info("Stopping server on %s by order of %s",
+                     get_datetime_string(datetime_str),
+                     print_address_from_descriptor(client, addr_str));
+            write_server_log("Stopping server on %s by order of %s",
+                             get_datetime_string(datetime_str),
+                             print_address_from_descriptor(client, addr_str));
+            break;
+        case ECHO:
+            // TODO: keep list of clients
+            // Pass message into write buffer and set socket to write
+            echo_buffer = ((struct client_data *)key->data)->read_buffer;
+            size_t max_echo_write = 0;
+            uint8_t *echo_msg = buffer_write_ptr(echo_buffer, &max_echo_write);
+
+            strncpy((char *)echo_msg, (char *)msg, max_echo_write);
+            size_t ammount_written = (size_t)ammount_read <= max_echo_write ? ammount_read : max_echo_write;
+            buffer_write_adv(echo_buffer, ammount_written);
+
+            buffer_reset(client_buffer);
+
+            selector_set_interest(selector, client, OP_WRITE);
+            break;
+        default:
+            // Error
+            return;
+        }
+        break;
+    }
+}
+
+void client_handle_write(struct selector_key *key)
+{
+    fd_selector selector = key->s;
+
+    socket_descriptor client = key->fd;
+    struct buffer *client_buffer = ((struct client_data *)key->data)->read_buffer;
+
+    // TODO: check if write was completed
+    write_to_client(client, client_buffer);
+
+    selector_set_interest(selector, client, OP_READ);
+}
+
+void client_handle_close(struct selector_key *key)
+{
+    free_client_data((struct client_data *)key->data);
+    close(key->fd);
+    server_data.client_count--;
 }
