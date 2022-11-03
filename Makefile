@@ -14,9 +14,9 @@ ASAN_FLAGS := -fsanitize=address -fsanitize=undefined -fno-asynchronous-unwind-t
 ASAN_LDFLAGS := -fsanitize=address -fsanitize=undefined
 
 CC := gcc
-CFLAGS := -std=c11 -g -Wall -fno-exceptions -D_GNU_SOURCE
+CFLAGS := -std=c11 -g -Wall -fno-exceptions -D_GNU_SOURCE -pthread
 CFLAGS += $(ASAN_FLAGS)
-LDFLAGS := $(ASAN_LDFLAGS)
+LDFLAGS := $(ASAN_LDFLAGS) -pthread -D_GNU_SOURCE
 
 all: $(TARGET_DIR)/$(COMPILE_TARGET)
 

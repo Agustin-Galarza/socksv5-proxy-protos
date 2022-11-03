@@ -84,7 +84,7 @@ bool add_new_client_log(socket_descriptor client_fd);
 bool add_disconnected_client_log(socket_descriptor client_fd);
 
 // Parses msg and returns an action to perform. Returns -1 on error
-enum command parse_client_message(char *msg,
+enum command parse_client_message(void *msg,
                                   size_t msg_size,
                                   socket_descriptor client_socket);
 
@@ -107,7 +107,9 @@ bool run_server(struct server_config *config)
     struct buffer **client_buffers = malloc(sizeof(struct buffer *) * config->max_clients);
     for (size_t i = 0; i < config->max_clients; i++)
     {
-        client_buffers[i] = buffer_init(CLIENT_BUFFER_SIZE);
+        struct buffer *client_buffer = malloc(sizeof(struct buffer));
+        client_buffers[i] = client_buffer;
+        buffer_init(client_buffers[i], CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
     }
     // set up descriptors and fd of clients
     fd_set read_fd_set;
@@ -119,7 +121,8 @@ bool run_server(struct server_config *config)
     // prepare and open logs file
     logs_file = fopen(config->logs_filename, LOGS_FILE_MODE);
     int logs_file_fd = fileno(logs_file);
-    logs_buffer = buffer_init(LOGS_BUFFER_SIZE);
+    logs_buffer = malloc(sizeof(struct buffer));
+    buffer_init(logs_buffer, LOGS_BUFFER_SIZE, malloc(LOGS_BUFFER_SIZE));
 
     size_t client_count = 0;
 
@@ -222,10 +225,9 @@ bool run_server(struct server_config *config)
             if (FD_ISSET(client_socket, &read_fd_set))
             {
                 // read client message
-                char *msg = buffer_get_to_write(client_buffer);
-                int ammount_read = read(client_socket,
-                                        msg,
-                                        buffer_get_remaining_write_size(client_buffer));
+                size_t max_write = 0;
+                uint8_t *msg = buffer_write_ptr(client_buffer, &max_write);
+                int ammount_read = read(client_socket, msg, max_write);
                 if (ammount_read < 0)
                 {
                     log_error("Could not read from client with descriptor %d", client_socket);
@@ -242,7 +244,7 @@ bool run_server(struct server_config *config)
 
                     add_disconnected_client_log(client_socket);
 
-                    buffer_clear(client_buffer);
+                    buffer_reset(client_buffer);
                     close(client_socket);
                     FD_CLR(client_socket, &write_fd_set);
                     client_sockets[i] = 0;
@@ -250,7 +252,7 @@ bool run_server(struct server_config *config)
                 }
                 else
                 {
-                    buffer_mark_written(client_buffer, ammount_read);
+                    buffer_write_adv(client_buffer, ammount_read);
                     msg[ammount_read] = '\0';
 
                     char addr_buf[ADDR_BUF_SIZE];
@@ -300,7 +302,8 @@ close_after_server_socket:
     close(server_socket);
 close_after_logs_buffer:
     flush_logs(); // try to flush logs before closing
-    buffer_close(logs_buffer);
+    free(logs_buffer->data);
+    free(logs_buffer);
 close_after_logs_file:
     fclose(logs_file);
 close_after_client_sockets:
@@ -313,7 +316,8 @@ close_after_client_sockets:
 close_after_client_buffers:
     for (size_t i = 0; i < config->max_clients; i++)
     {
-        buffer_close(client_buffers[i]);
+        free(client_buffers[i]->data);
+        free(client_buffers[i]);
     }
     free(client_buffers);
     return error;
@@ -490,9 +494,9 @@ bool add_disconnected_client_log(socket_descriptor client_fd)
 
 bool flush_logs()
 {
-    char *msg = buffer_get_to_read(logs_buffer);
-    ssize_t msg_size = strlen(msg);
-    if (msg_size != 0)
+    size_t max_read = 0;
+    uint8_t *msg = buffer_read_ptr(logs_buffer, &max_read);
+    if (max_read != 0)
     {
         ssize_t chars_written = fprintf(logs_file, "%s\n", msg);
         fflush(logs_file);
@@ -500,20 +504,20 @@ bool flush_logs()
         if (chars_written < 0)
             return true;
 
-        if (chars_written < msg_size)
+        if ((size_t)chars_written < max_read)
         {
             // mark the read chars from buffer to keep reading from it.
-            buffer_mark_read(logs_buffer, chars_written);
+            buffer_read_adv(logs_buffer, chars_written);
         }
         else
         {
-            buffer_clear(logs_buffer);
+            buffer_reset(logs_buffer);
         }
     }
     return false;
 }
 
-enum command parse_client_message(char *msg, size_t msg_size, socket_descriptor client_socket)
+enum command parse_client_message(void *msg, size_t msg_size, socket_descriptor client_socket)
 {
     if (strncmp(msg, "close\n", msg_size) == 0)
     {
@@ -524,21 +528,21 @@ enum command parse_client_message(char *msg, size_t msg_size, socket_descriptor 
 
 bool write_to_client(socket_descriptor client_socket, struct buffer *client_buffer)
 {
-    char *msg = buffer_get_to_read(client_buffer);
-    ssize_t msg_size = strlen(msg);
-    if (msg_size != 0)
+    size_t max_read = 0;
+    uint8_t *msg = buffer_read_ptr(client_buffer, &max_read);
+    if (max_read != 0)
     {
-        ssize_t chars_written = send(client_socket, msg, msg_size, 0);
+        ssize_t chars_written = send(client_socket, msg, max_read, 0);
         if (chars_written == -1)
             return true;
 
-        if (chars_written < msg_size)
+        if ((size_t)chars_written < max_read)
         {
-            buffer_mark_read(client_buffer, chars_written);
+            buffer_read_adv(client_buffer, chars_written);
         }
         else
         {
-            buffer_clear(client_buffer);
+            buffer_reset(client_buffer);
         }
     }
     return false;
@@ -564,15 +568,15 @@ bool write_server_log(const char *log_msg_fmt, ...)
     va_list argp;
     va_start(argp, log_msg_fmt);
 
-    size_t remaining_size = buffer_get_remaining_write_size(logs_buffer);
-
-    size_t chars_written = vsnprintf(buffer_get_to_write(logs_buffer), remaining_size, log_msg_fmt, argp);
+    size_t remaining_size = 0;
+    uint8_t *write_ptr = buffer_write_ptr(logs_buffer, &remaining_size);
+    size_t chars_written = vsnprintf((char *)write_ptr, remaining_size, log_msg_fmt, argp);
     if (chars_written < 0)
     {
         va_end(argp);
         return true;
     }
-    buffer_mark_written(logs_buffer, chars_written);
+    buffer_write_adv(logs_buffer, chars_written);
 
     va_end(argp);
     return false;

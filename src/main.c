@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 
     if (run_server(&config_args))
     {
-        log_error("Could not start server");
+        log_error("Error while running server");
         exit(1);
     }
 

@@ -1,72 +1,124 @@
+/**
+ * buffer.c - buffer con acceso directo (útil para I/O) que mantiene
+ *            mantiene puntero de lectura y de escritura.
+ */
+#include <string.h>
+#include <stdint.h>
+#include <assert.h>
+
 #include "utils/buffer.h"
 
-struct buffer
+inline void
+buffer_reset(buffer *b)
 {
-    char *data;
-    size_t chars_read;
-    size_t chars_written;
-    size_t size;
-};
+    b->read = b->data;
 
-struct buffer *buffer_init(size_t size)
-{
-    struct buffer *buf = (struct buffer *)malloc(sizeof(struct buffer));
-    buf->data = (char *)malloc(size + 1);
-    buf->chars_read = 0;
-    buf->chars_written = 0;
-    buf->size = size;
-    buf->data[buf->size] = '\0';
-    buf->data[0] = '\0';
-    return buf;
+    b->write = b->data;
 }
 
-size_t buffer_mark_written(struct buffer *buf, unsigned ammount)
+void buffer_init(buffer *b, const size_t n, uint8_t *data)
 {
-    buf->chars_written += ammount;
-    return buffer_get_remaining_write_size(buf);
+    b->data = data;
+    buffer_reset(b);
+    b->limit = b->data + n;
 }
 
-size_t buffer_mark_read(struct buffer *buf, unsigned ammount)
+inline bool
+buffer_can_write(buffer *b)
 {
-    buf->chars_read += ammount;
-    if (buf->chars_read > buf->size)
+    return b->limit - b->write > 0;
+}
+
+inline uint8_t *
+buffer_write_ptr(buffer *b, size_t *nbyte)
+{
+    assert(b->write <= b->limit);
+    *nbyte = b->limit - b->write;
+    return b->write;
+}
+
+inline bool
+buffer_can_read(buffer *b)
+{
+    return b->write - b->read > 0;
+}
+
+inline uint8_t *
+buffer_read_ptr(buffer *b, size_t *nbyte)
+{
+    assert(b->read <= b->write);
+    *nbyte = b->write - b->read;
+    return b->read;
+}
+
+inline void
+buffer_write_adv(buffer *b, const ssize_t bytes)
+{
+    if (bytes > -1)
     {
-        buf->chars_read = buf->size;
+        b->write += (size_t)bytes;
+        assert(b->write <= b->limit);
     }
-    return buffer_get_remaining_read_size(buf);
 }
-inline char *buffer_get_to_read(struct buffer *buf)
+
+inline void
+buffer_read_adv(buffer *b, const ssize_t bytes)
 {
-    return buf->data + buf->chars_read;
+    if (bytes > -1)
+    {
+        b->read += (size_t)bytes;
+        assert(b->read <= b->write);
+
+        if (b->read == b->write)
+        {
+            // compactacion poco costosa
+            buffer_compact(b);
+        }
+    }
 }
-inline char *buffer_get_to_write(struct buffer *buf)
+
+inline uint8_t
+buffer_read(buffer *b)
 {
-    return buf->data + buf->chars_written;
+    uint8_t ret;
+    if (buffer_can_read(b))
+    {
+        ret = *b->read;
+        buffer_read_adv(b, 1);
+    }
+    else
+    {
+        ret = 0;
+    }
+    return ret;
 }
-inline void buffer_reset_read(struct buffer *buf)
+
+inline void
+buffer_write(buffer *b, uint8_t c)
 {
-    buf->chars_read = 0;
+    if (buffer_can_write(b))
+    {
+        *b->write = c;
+        buffer_write_adv(b, 1);
+    }
 }
-inline void buffer_clear(struct buffer *buf)
+
+void buffer_compact(buffer *b)
 {
-    buf->data[0] = '\0';
-    buf->chars_read = 0;
-    buf->chars_written = 0;
-}
-inline size_t buffer_get_max_size(struct buffer *buf)
-{
-    return buf->size;
-}
-inline size_t buffer_get_remaining_read_size(struct buffer *buf)
-{
-    return buf->chars_written - buf->chars_read;
-}
-inline size_t buffer_get_remaining_write_size(struct buffer *buf)
-{
-    return buf->size - buf->chars_written;
-}
-inline void buffer_close(struct buffer *buf)
-{
-    free(buf->data);
-    free(buf);
+    if (b->data == b->read)
+    {
+        // nada por hacer
+    }
+    else if (b->read == b->write)
+    {
+        b->read = b->data;
+        b->write = b->data;
+    }
+    else
+    {
+        const size_t n = b->write - b->read;
+        memmove(b->data, b->read, n);
+        b->read = b->data;
+        b->write = b->data + n;
+    }
 }

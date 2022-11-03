@@ -1,58 +1,143 @@
-#ifndef BUFFER_H_
-#define BUFFER_H_
-#include <stdlib.h>
-#include <sys/types.h>
+#ifndef BUFFER_H_VelRDAxzvnuFmwEaR0ftrkIinkT
+#define BUFFER_H_VelRDAxzvnuFmwEaR0ftrkIinkT
 
-struct buffer;
+#include <stdbool.h>
+#include <unistd.h> // size_t, ssize_t
+#include <stdint.h>
 
-// creates a new buffer with size bytes+1 of space (to include the final '\0')
-struct buffer *buffer_init(size_t size);
 /**
- * @brief Marks that ammount chars have been read from the buffer, so the next time that buffer_get_to_read is called it returns the next char to read.
+ * buffer.c - buffer con acceso directo (útil para I/O) que mantiene
+ *            mantiene puntero de lectura y de escritura.
  *
- * @return The remaining size to read from the buffer
- */
-size_t buffer_mark_read(struct buffer *buf, unsigned ammount);
-/**
- * @brief Marks that ammount chars have been written into the buffer, so the next time that buffer_get_to_write is called it returns the next position to write.
  *
- * @return The remaining size to write to the buffer
+ * Para esto se mantienen dos punteros, uno de lectura
+ * y otro de escritura, y se provee funciones para
+ * obtener puntero base y capacidad disponibles.
+ *
+ * R=0
+ * ↓
+ * +---+---+---+---+---+---+
+ * |   |   |   |   |   |   |
+ * +---+---+---+---+---+---+
+ * ↑                       ↑
+ * W=0                     limit=6
+ *
+ * Invariantes:
+ *    R <= W <= limit
+ *
+ * Se quiere escribir en el bufer cuatro bytes.
+ *
+ * ptr + 0 <- buffer_write_ptr(b, &wbytes), wbytes=6
+ * n = read(fd, ptr, wbytes)
+ * buffer_write_adv(b, n = 4)
+ *
+ * R=0
+ * ↓
+ * +---+---+---+---+---+---+
+ * | H | O | L | A |   |   |
+ * +---+---+---+---+---+---+
+ *                 ↑       ↑
+ *                W=4      limit=6
+ *
+ * Quiero leer 3 del buffer
+ * ptr + 0 <- buffer_read_ptr, wbytes=4
+ * buffer_read_adv(b, 3);
+ *
+ *            R=3
+ *             ↓
+ * +---+---+---+---+---+---+
+ * | H | O | L | A |   |   |
+ * +---+---+---+---+---+---+
+ *                 ↑       ↑
+ *                W=4      limit=6
+ *
+ * Quiero escribir 2 bytes mas
+ * ptr + 4 <- buffer_write_ptr(b, &wbytes=2);
+ * buffer_write_adv(b, 2)
+ *
+ *            R=3
+ *             ↓
+ * +---+---+---+---+---+---+
+ * | H | O | L | A |   | M |
+ * +---+---+---+---+---+---+
+ *                         ↑
+ *                         limit=6
+ *                         W=4
+ * Compactación a demanda
+ * R=0
+ * ↓
+ * +---+---+---+---+---+---+
+ * | A |   | M |   |   |   |
+ * +---+---+---+---+---+---+
+ *             ↑           ↑
+ *            W=3          limit=6
+ *
+ * Leo los tres bytes, como R == W, se auto compacta.
+ *
+ * R=0
+ * ↓
+ * +---+---+---+---+---+---+
+ * |   |   |   |   |   |   |
+ * +---+---+---+---+---+---+
+ * ↑                       ↑
+ * W=0                     limit=6
  */
-size_t buffer_mark_written(struct buffer *buf, unsigned ammount);
-// frees all buffer resources
-void buffer_close(struct buffer *buf);
-/**
- * Returns the buffer in the next position to start reading from. This position
-Example:
+typedef struct buffer buffer;
+struct buffer
+{
+    uint8_t *data;
 
-    char *buf = buffer_get_to_read(buffer_ref);
-    size_t size = buffer_get_remaining_size(buffer_ref);
-    int read_chars = read(fd, buf, size);
-    buffer_mark_read(buf, read_chars);
-*/
-char *buffer_get_to_read(struct buffer *buf);
+    /** límite superior del buffer. inmutable */
+    uint8_t *limit;
+
+    /** puntero de lectura */
+    uint8_t *read;
+
+    /** puntero de escritura */
+    uint8_t *write;
+};
+
 /**
- * Returns the buffer in the next position to start writing from
- * Example:
- * int written_chars =
- * write(
-        fd,
-        buffer_read(buffer_ref),
-        buffer_get_remaining_size(buffer_ref)
-        );
-    buffer_mark_written(buf, written_chars);
+ * inicializa el buffer sin utilizar el heap
  */
-char *buffer_get_to_write(struct buffer *buf);
-// Returns the buffer from the start
-char *buffer_get_all(struct buffer *buf);
-// resets buffer and empties its contents
-void buffer_clear(struct buffer *buf);
-// sets the buffer to be read from the beginning
-void buffer_reset_read(struct buffer *buf);
-// returns the total size of the buffer, not including the final '\0'
-size_t buffer_get_max_size(struct buffer *buf);
-// returns the remaining size to read from the buffer, not including the final '\0'
-size_t buffer_get_remaining_read_size(struct buffer *buf);
-// returns the remaining size to write into the buffer, not including the final '\0'
-size_t buffer_get_remaining_write_size(struct buffer *buf);
+void buffer_init(buffer *b, const size_t n, uint8_t *data);
+
+/**
+ * Retorna un puntero donde se pueden escribir hasta `*nbytes`.
+ * Se debe notificar mediante la función `buffer_write_adv'
+ */
+uint8_t *
+buffer_write_ptr(buffer *b, size_t *nbyte);
+void buffer_write_adv(buffer *b, const ssize_t bytes);
+
+uint8_t *
+buffer_read_ptr(buffer *b, size_t *nbyte);
+void buffer_read_adv(buffer *b, const ssize_t bytes);
+
+/**
+ * obtiene un byte
+ */
+uint8_t
+buffer_read(buffer *b);
+
+/** escribe un byte */
+void buffer_write(buffer *b, uint8_t c);
+
+/**
+ * compacta el buffer.
+ * Elimina todos los caracteres que ya hayan sido leídos
+ */
+void buffer_compact(buffer *b);
+
+/**
+ * Reinicia todos los punteros
+ */
+void buffer_reset(buffer *b);
+
+/** retorna true si hay bytes para leer del buffer */
+bool buffer_can_read(buffer *b);
+
+/** retorna true si se pueden escribir bytes en el buffer */
+bool buffer_can_write(buffer *b);
+
 #endif
