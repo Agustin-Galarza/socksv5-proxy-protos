@@ -7,4 +7,4 @@ services:
       context: $PWD
       dockerfile: Dockerfile      
     volumes: [$PWD:/app]
-    ports: [8000-9000:8000-9000]
+    ports: [8080:8080]
