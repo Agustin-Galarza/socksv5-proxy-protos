@@ -10,8 +10,7 @@
 #define DEFAULT_FILE_NAME "logs/logger.log"
 #endif
 
-int main(int argc, char **argv)
-{
+int main(int argc, char** argv) {
     struct logger_init_args args = {
         .logs_enabled = true,
         .stderr_enabled = true,
@@ -20,7 +19,7 @@ int main(int argc, char **argv)
             DEFAULT_DEBUG_CONFIG,  // DEBUG
             DEFAULT_INFO_CONFIG,   // INFO
             DEFAULT_WARNING_CONFIG // WARNING
-        }};
+        } };
     logger_init(&args);
     atexit(logger_cleanup);
 

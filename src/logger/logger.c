@@ -28,8 +28,7 @@ char _log_entry_fmt[] = "[%s] - %s\n"; // [level_tag] - message
 
 char log_buffer[MAX_LOG_SIZE];
 
-void logger_init(struct logger_init_args *args)
-{
+void logger_init(struct logger_init_args* args) {
     status.is_logger_enabled = args->logs_enabled;
     if (!status.is_logger_enabled)
         return;
@@ -66,25 +65,22 @@ void logger_init(struct logger_init_args *args)
     return;
 }
 
-bool is_file_enabled(LogLevel level)
-{
+bool is_file_enabled(LogLevel level) {
     return status.level[level].filename[0] != 0;
 }
 
-bool is_level_enabled(LogLevel level)
-{
+bool is_level_enabled(LogLevel level) {
     return status.level[level].enabled;
 }
 
-bool _log_file(LogLevel level, const char *fmt_msg, va_list argp)
-{
+bool _log_file(LogLevel level, const char* fmt_msg, va_list argp) {
     if (!is_file_enabled(level))
         return false;
 
-    char *filename = status.level[level].filename;
-    char *levelname = status.level[level].name;
+    char* filename = status.level[level].filename;
+    char* levelname = status.level[level].name;
 
-    FILE *file = fopen(filename, FILE_APPEND_CREATE);
+    FILE* file = fopen(filename, FILE_APPEND_CREATE);
     if (file == NULL)
     {
         perror("Error while opening file");
@@ -110,13 +106,12 @@ bool _log_file(LogLevel level, const char *fmt_msg, va_list argp)
     return false;
 }
 
-bool _log_stderr(LogLevel level, const char *fmt, va_list argp)
-{
+bool _log_stderr(LogLevel level, const char* fmt, va_list argp) {
     if (!status.is_stderr_enabled)
         return false;
 
-    char *levelname = status.level[level].name;
-    char *color = status.level[level].color;
+    char* levelname = status.level[level].name;
+    char* color = status.level[level].color;
 
     if (fputs(color, stderr) == EOF)
     {
@@ -145,13 +140,11 @@ bool _log_stderr(LogLevel level, const char *fmt, va_list argp)
     return false;
 }
 
-void set_context(LogLevel level)
-{
+void set_context(LogLevel level) {
     // nop
 }
 
-bool log_info(const char *fmt_msg, ...)
-{
+bool log_info(const char* fmt_msg, ...) {
     if (!is_level_enabled(INFO))
         return false;
     va_list argp;
@@ -174,8 +167,7 @@ bool log_info(const char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_error(const char *fmt_msg, ...)
-{
+bool log_error(const char* fmt_msg, ...) {
     if (!is_level_enabled(ERROR))
         return false;
     va_list argp;
@@ -198,8 +190,7 @@ bool log_error(const char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_warning(const char *fmt_msg, ...)
-{
+bool log_warning(const char* fmt_msg, ...) {
     if (!is_level_enabled(WARNING))
         return false;
     va_list argp;
@@ -222,8 +213,7 @@ bool log_warning(const char *fmt_msg, ...)
     va_end(argp);
     return false;
 }
-bool log_debug(const char *fmt_msg, ...)
-{
+bool log_debug(const char* fmt_msg, ...) {
     if (!is_level_enabled(DEBUG))
         return false;
     va_list argp;
@@ -246,7 +236,6 @@ bool log_debug(const char *fmt_msg, ...)
     return false;
 }
 
-void logger_cleanup()
-{
+void logger_cleanup() {
     // no mallocs yet ;D
 }

@@ -12,13 +12,13 @@ enum ip_version
 struct server_config
 {
     size_t max_clients;
-    const char *port;
+    const char* port;
     enum ip_version version;
     int initial_connections;
-    const char *logs_filename;
+    const char* logs_filename;
 };
 
 // returns TRUE on error, FALSE, otherwhise
-bool run_server(struct server_config *config);
+bool run_server(struct server_config* config);
 
 #endif

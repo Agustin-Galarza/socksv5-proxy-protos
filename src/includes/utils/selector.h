@@ -43,7 +43,7 @@
  *  - esperar algún evento: `selector_iteratate'
  *  - destruir los recursos de la librería `selector_close'
  */
-typedef struct fdselector *fd_selector;
+typedef struct fdselector* fd_selector;
 
 /** valores de retorno. */
 typedef enum
@@ -63,7 +63,7 @@ typedef enum
 } selector_status;
 
 /** retorna una descripción humana del fallo */
-const char *
+const char*
 selector_error(const selector_status status);
 
 /** opciones de inicialización del selector */
@@ -78,7 +78,7 @@ struct selector_init
 
 /** inicializa la librería */
 selector_status
-selector_init(const struct selector_init *c);
+selector_init(const struct selector_init* c);
 
 /** deshace la incialización de la librería */
 selector_status
@@ -111,9 +111,9 @@ typedef enum
  */
 #define INTEREST_OFF(FLAG, MASK) ((FLAG) & ~(MASK))
 
-/**
- * Argumento de todas las funciones callback del handler
- */
+ /**
+  * Argumento de todas las funciones callback del handler
+  */
 struct selector_key
 {
     /** el selector que dispara el evento */
@@ -121,7 +121,7 @@ struct selector_key
     /** el file descriptor en cuestión */
     int fd;
     /** dato provisto por el usuario */
-    void *data;
+    void* data;
 };
 
 /**
@@ -129,15 +129,15 @@ struct selector_key
  */
 typedef struct fd_handler
 {
-    void (*handle_read)(struct selector_key *key);
-    void (*handle_write)(struct selector_key *key);
-    void (*handle_block)(struct selector_key *key);
+    void (*handle_read)(struct selector_key* key);
+    void (*handle_write)(struct selector_key* key);
+    void (*handle_block)(struct selector_key* key);
 
     /**
      * llamado cuando se se desregistra el fd
      * Seguramente deba liberar los recusos alocados en data.
      */
-    void (*handle_close)(struct selector_key *key);
+    void (*handle_close)(struct selector_key* key);
 
 } fd_handler;
 
@@ -155,9 +155,9 @@ typedef struct fd_handler
 selector_status
 selector_register(fd_selector s,
                   const int fd,
-                  const fd_handler *handler,
+                  const fd_handler* handler,
                   const fd_interest interest,
-                  void *data);
+                  void* data);
 
 /**
  * desregistra un file descriptor del selector
@@ -172,7 +172,7 @@ selector_set_interest(fd_selector s, int fd, fd_interest i);
 
 /** permite cambiar los intereses para un file descriptor */
 selector_status
-selector_set_interest_key(struct selector_key *key, fd_interest i);
+selector_set_interest_key(struct selector_key* key, fd_interest i);
 
 /**
  * se bloquea hasta que hay eventos disponible y los despacha.

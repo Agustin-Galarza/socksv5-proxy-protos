@@ -83,10 +83,10 @@ struct logger_init_args
 
 //! All functions return true on error, false on success
 
-void logger_init(struct logger_init_args *args);
+void logger_init(struct logger_init_args* args);
 void logger_cleanup();
-bool log_info(const char *fmt_msg, ...);
-bool log_error(const char *fmt_msg, ...);
-bool log_warning(const char *fmt_msg, ...);
-bool log_debug(const char *fmt_msg, ...);
+bool log_info(const char* fmt_msg, ...);
+bool log_error(const char* fmt_msg, ...);
+bool log_warning(const char* fmt_msg, ...);
+bool log_debug(const char* fmt_msg, ...);
 #endif

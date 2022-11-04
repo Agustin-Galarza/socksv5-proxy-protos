@@ -10,12 +10,13 @@
 
 struct logs_file_data
 {
-    FILE *stream;
-    struct buffer *buff;
-} logs_file_data;
+    FILE* stream;
+    struct buffer* buff;
+};
 
-bool init_server_logger(const char *filename);
-bool write_server_log(const char *log_msg_fmt, ...);
+bool init_server_logger(const char* filename);
+struct logs_file_data get_file_data();
+bool write_server_log(const char* log_msg_fmt, ...);
 bool flush_logs();
 void free_server_logger();
 

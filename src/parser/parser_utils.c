@@ -4,10 +4,9 @@
 
 #include "parser/parser_utils.h"
 
-const char *
-parser_utils_strcmpi_event(const enum string_cmp_event_types type)
-{
-    const char *ret;
+const char*
+parser_utils_strcmpi_event(const enum string_cmp_event_types type) {
+    const char* ret;
 
     switch (type)
     {
@@ -25,24 +24,21 @@ parser_utils_strcmpi_event(const enum string_cmp_event_types type)
 }
 
 static void
-may_eq(struct parser_event *ret, const uint8_t c)
-{
+may_eq(struct parser_event* ret, const uint8_t c) {
     ret->type = STRING_CMP_MAYEQ;
     ret->n = 1;
     ret->data[0] = c;
 }
 
 static void
-eq(struct parser_event *ret, const uint8_t c)
-{
+eq(struct parser_event* ret, const uint8_t c) {
     ret->type = STRING_CMP_EQ;
     ret->n = 1;
     ret->data[0] = c;
 }
 
 static void
-neq(struct parser_event *ret, const uint8_t c)
-{
+neq(struct parser_event* ret, const uint8_t c) {
     ret->type = STRING_CMP_NEQ;
     ret->n = 1;
     ret->data[0] = c;
@@ -77,13 +73,12 @@ neq(struct parser_event *ret, const uint8_t c)
  *
  */
 struct parser_definition
-parser_utils_strcmpi(const char *s)
-{
+    parser_utils_strcmpi(const char* s) {
     const size_t n = strlen(s);
 
-    struct parser_state_transition **states = calloc(n + 2, sizeof(*states));
-    size_t *nstates = calloc(n + 2, sizeof(*nstates));
-    struct parser_state_transition *transitions = calloc(3 * (n + 2),
+    struct parser_state_transition** states = calloc(n + 2, sizeof(*states));
+    size_t* nstates = calloc(n + 2, sizeof(*nstates));
+    struct parser_state_transition* transitions = calloc(3 * (n + 2),
                                                          sizeof(*transitions));
     if (states == NULL || nstates == NULL || transitions == NULL)
     {
@@ -136,16 +131,15 @@ parser_utils_strcmpi(const char *s)
     struct parser_definition def = {
         .start_state = 0,
         .states_count = n + 2,
-        .states = (const struct parser_state_transition **)states,
-        .states_n = (const size_t *)nstates,
+        .states = (const struct parser_state_transition**)states,
+        .states_n = (const size_t*)nstates,
     };
 
     return def;
 }
 
-void parser_utils_strcmpi_destroy(const struct parser_definition *p)
-{
-    free((void *)p->states[0]);
-    free((void *)p->states);
-    free((void *)p->states_n);
+void parser_utils_strcmpi_destroy(const struct parser_definition* p) {
+    free((void*)p->states[0]);
+    free((void*)p->states);
+    free((void*)p->states_n);
 }

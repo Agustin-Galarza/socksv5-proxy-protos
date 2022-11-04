@@ -41,9 +41,9 @@ typedef int socket_descriptor;
 struct client_data
 {
     // Buffer used to write from Client to Remote
-    struct buffer *write_buffer;
+    struct buffer* write_buffer;
     // Buffer used to wrte from Remote to Client
-    struct buffer *read_buffer;
+    struct buffer* read_buffer;
 };
 
 /**************************************
@@ -69,7 +69,7 @@ struct server_data
 void handle_sig_kill(int signum);
 
 socket_descriptor
-server_init(struct server_config *config);
+server_init(struct server_config* config);
 
 /**
  * @brief accepts new connection and returns the new client's socket descriptor
@@ -81,25 +81,25 @@ bool add_new_client_log(socket_descriptor client_fd);
 
 bool add_disconnected_client_log(socket_descriptor client_fd);
 
-bool write_to_client(socket_descriptor client_socket, struct buffer *client_buffer);
+bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer);
 
-struct client_data *
-generate_new_client_data();
+struct client_data*
+    generate_new_client_data();
 
-void free_client_data(struct client_data *data);
+void free_client_data(struct client_data* data);
 
 bool add_new_client(socket_descriptor client, fd_selector selector);
 
 // Event Handlers
-void server_handle_read(struct selector_key *key);
+void server_handle_read(struct selector_key* key);
 
-void handle_file_write(struct selector_key *key);
+void handle_file_write(struct selector_key* key);
 
-void client_handle_read(struct selector_key *key);
+void client_handle_read(struct selector_key* key);
 
-void client_handle_write(struct selector_key *key);
+void client_handle_write(struct selector_key* key);
 
-void client_handle_close(struct selector_key *key);
+void client_handle_close(struct selector_key* key);
 
 struct fd_handler client_handlers = {
     .handle_read = client_handle_read,
@@ -112,8 +112,7 @@ struct fd_handler client_handlers = {
 |          Function Implementations          |
 **********************************************/
 
-bool run_server(struct server_config *config)
-{
+bool run_server(struct server_config* config) {
     signal(SIGINT, handle_sig_kill);
     signal(SIGKILL, handle_sig_kill);
     signal(SIGTERM, handle_sig_kill);
@@ -128,12 +127,12 @@ bool run_server(struct server_config *config)
         log_error("Error initializing logs file");
         return true;
     }
-    int logs_file_fd = fileno(logs_file_data.stream);
+    int logs_file_fd = fileno(get_file_data().stream);
 
 #define END goto close_after_logs_file
 
     // Starting server
-    char *time_msg = malloc(TIME_FMT_STR_MAX_SIZE);
+    char* time_msg = malloc(TIME_FMT_STR_MAX_SIZE);
     get_datetime_string(time_msg);
     if (write_server_log("Starting server on %s\n", time_msg))
     {
@@ -227,7 +226,8 @@ bool run_server(struct server_config *config)
         .handle_block = NULL,
     };
 
-    status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &logs_file_data);
+    struct logs_file_data file_data = get_file_data();
+    status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &file_data);
     if (status != SELECTOR_SUCCESS)
     {
         log_error("Could not register logs file");
@@ -263,8 +263,7 @@ close_after_logs_file:
     return error;
 }
 
-socket_descriptor server_init(struct server_config *config)
-{
+socket_descriptor server_init(struct server_config* config) {
     errno = 0;
 
     struct addrinfo addr_config;
@@ -274,7 +273,7 @@ socket_descriptor server_init(struct server_config *config)
     addr_config.ai_protocol = IPPROTO_TCP;
     addr_config.ai_socktype = SOCK_STREAM;
 
-    struct addrinfo *addr_list;
+    struct addrinfo* addr_list;
 
     if (getaddrinfo(NULL, config->port, &addr_config, &addr_list) != 0)
     {
@@ -309,7 +308,7 @@ socket_descriptor server_init(struct server_config *config)
             server_socket,
             SOL_SOCKET,
             SO_REUSEADDR,
-            (char *)&reuseaddr_option_value,
+            (char*)&reuseaddr_option_value,
             sizeof(reuseaddr_option_value)) < 0)
     {
         log_error("Could not configure socket: %s", strerror(errno));
@@ -336,27 +335,25 @@ socket_descriptor server_init(struct server_config *config)
 }
 
 socket_descriptor
-accept_new_connection(socket_descriptor server_socket)
-{
+accept_new_connection(socket_descriptor server_socket) {
     struct sockaddr_storage client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
 
     socket_descriptor new_connection = accept(server_socket,
-                                              (struct sockaddr *)&client_addr,
-                                              &client_addr_len);
+        (struct sockaddr*)&client_addr,
+        &client_addr_len);
     if (new_connection < 0)
     {
         log_error("New connection refused: %s", strerror(errno));
         return -1;
     }
     char addr_buf[ADDR_BUF_SIZE];
-    log_info("New connection to %s", print_address((struct sockaddr *)&client_addr, addr_buf));
+    log_info("New connection to %s", print_address((struct sockaddr*)&client_addr, addr_buf));
 
     return new_connection;
 }
 
-bool add_new_client_log(socket_descriptor client_fd)
-{
+bool add_new_client_log(socket_descriptor client_fd) {
     char client_address_str[ADDR_BUF_SIZE];
     char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
 
@@ -377,8 +374,7 @@ bool add_new_client_log(socket_descriptor client_fd)
     return false;
 }
 
-bool add_disconnected_client_log(socket_descriptor client_fd)
-{
+bool add_disconnected_client_log(socket_descriptor client_fd) {
     char client_address_str[ADDR_BUF_SIZE];
     char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
 
@@ -399,10 +395,9 @@ bool add_disconnected_client_log(socket_descriptor client_fd)
     return false;
 }
 
-bool write_to_client(socket_descriptor client_socket, struct buffer *client_buffer)
-{
+bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer) {
     size_t max_read = 0;
-    uint8_t *msg = buffer_read_ptr(client_buffer, &max_read);
+    uint8_t* msg = buffer_read_ptr(client_buffer, &max_read);
     if (max_read != 0)
     {
         ssize_t chars_written = send(client_socket, msg, max_read, 0);
@@ -421,8 +416,7 @@ bool write_to_client(socket_descriptor client_socket, struct buffer *client_buff
     return false;
 }
 
-void handle_sig_kill(int signum)
-{
+void handle_sig_kill(int signum) {
     char datetime_str[TIME_FMT_STR_MAX_SIZE];
     get_datetime_string(datetime_str);
 
@@ -430,15 +424,14 @@ void handle_sig_kill(int signum)
     snprintf(log_msg, LOGS_BUFFER_SIZE, "Server abruptly stopped on %s by %s", get_datetime_string(datetime_str), strsignal(signum));
 
     log_warning(log_msg);
-    fprintf(logs_file_data.stream, "%s\n", log_msg);
-    fflush(logs_file_data.stream);
+    fprintf(get_file_data().stream, "%s\n", log_msg);
+    fflush(get_file_data().stream);
 
     server_active = false;
 }
 
-struct client_data *generate_new_client_data()
-{
-    struct client_data *data = malloc(sizeof(struct client_data));
+struct client_data* generate_new_client_data() {
+    struct client_data* data = malloc(sizeof(struct client_data));
 
     data->read_buffer = malloc(sizeof(struct buffer));
     buffer_init(data->read_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
@@ -449,8 +442,7 @@ struct client_data *generate_new_client_data()
     return data;
 }
 
-void free_client_data(struct client_data *data)
-{
+void free_client_data(struct client_data* data) {
     if (data == NULL)
         return;
 
@@ -467,8 +459,7 @@ void free_client_data(struct client_data *data)
     free(data);
 }
 
-bool add_new_client(socket_descriptor client, fd_selector selector)
-{
+bool add_new_client(socket_descriptor client, fd_selector selector) {
     // TODO: manage states: we should only want to read from a client after it's connected. Then we'll handle reads and writes as every connection changes states.
     // At first we read from the client, then we re-write the string to the client
     if (selector_register(selector, client, &client_handlers, OP_READ, generate_new_client_data()))
@@ -479,9 +470,8 @@ bool add_new_client(socket_descriptor client, fd_selector selector)
     return false;
 }
 
-void server_handle_read(struct selector_key *key)
-{
-    struct server_data *data = key->data;
+void server_handle_read(struct selector_key* key) {
+    struct server_data* data = key->data;
     socket_descriptor server_socket = key->fd;
     fd_selector selector = key->s;
 
@@ -512,26 +502,24 @@ void server_handle_read(struct selector_key *key)
     }
 }
 
-void handle_file_write(struct selector_key *key)
-{
+void handle_file_write(struct selector_key* key) {
     if (flush_logs())
     {
         log_error("Could not write into logs file");
     }
 }
 
-void client_handle_read(struct selector_key *key)
-{
+void client_handle_read(struct selector_key* key) {
     fd_selector selector = key->s;
 
     socket_descriptor client = key->fd;
-    struct buffer *client_buffer = ((struct client_data *)key->data)->write_buffer;
+    struct buffer* client_buffer = ((struct client_data*)key->data)->write_buffer;
 
     char addr_str[ADDR_BUF_SIZE];
     print_address_from_descriptor(client, addr_str);
 
     size_t max_write = 0;
-    uint8_t *msg = buffer_write_ptr(client_buffer, &max_write);
+    uint8_t* msg = buffer_write_ptr(client_buffer, &max_write);
 
     if (max_write == 0)
         return;
@@ -552,7 +540,7 @@ void client_handle_read(struct selector_key *key)
         msg[ammount_read] = '\0';
 
         log_info("New message from %s: %s", addr_str, msg);
-        struct buffer *echo_buffer;
+        struct buffer* echo_buffer;
         switch (parse_client_message(msg, ammount_read, client))
         {
         case CLOSE:
@@ -560,20 +548,20 @@ void client_handle_read(struct selector_key *key)
             char datetime_str[TIME_FMT_STR_MAX_SIZE];
 
             log_info("Stopping server on %s by order of %s",
-                     get_datetime_string(datetime_str),
-                     print_address_from_descriptor(client, addr_str));
+                get_datetime_string(datetime_str),
+                print_address_from_descriptor(client, addr_str));
             write_server_log("Stopping server on %s by order of %s",
-                             get_datetime_string(datetime_str),
-                             print_address_from_descriptor(client, addr_str));
+                get_datetime_string(datetime_str),
+                print_address_from_descriptor(client, addr_str));
             break;
         case ECHO:
             // TODO: keep list of clients
             // Pass message into write buffer and set socket to write
-            echo_buffer = ((struct client_data *)key->data)->read_buffer;
+            echo_buffer = ((struct client_data*)key->data)->read_buffer;
             size_t max_echo_write = 0;
-            uint8_t *echo_msg = buffer_write_ptr(echo_buffer, &max_echo_write);
+            uint8_t* echo_msg = buffer_write_ptr(echo_buffer, &max_echo_write);
 
-            strncpy((char *)echo_msg, (char *)msg, max_echo_write);
+            strncpy((char*)echo_msg, (char*)msg, max_echo_write);
             size_t ammount_written = (size_t)ammount_read <= max_echo_write ? ammount_read : max_echo_write;
             buffer_write_adv(echo_buffer, ammount_written);
 
@@ -589,12 +577,11 @@ void client_handle_read(struct selector_key *key)
     }
 }
 
-void client_handle_write(struct selector_key *key)
-{
+void client_handle_write(struct selector_key* key) {
     fd_selector selector = key->s;
 
     socket_descriptor client = key->fd;
-    struct buffer *client_buffer = ((struct client_data *)key->data)->read_buffer;
+    struct buffer* client_buffer = ((struct client_data*)key->data)->read_buffer;
 
     // TODO: check if write was completed
     write_to_client(client, client_buffer);
@@ -602,9 +589,8 @@ void client_handle_write(struct selector_key *key)
     selector_set_interest(selector, client, OP_READ);
 }
 
-void client_handle_close(struct selector_key *key)
-{
-    free_client_data((struct client_data *)key->data);
+void client_handle_close(struct selector_key* key) {
+    free_client_data((struct client_data*)key->data);
     close(key->fd);
     server_data.client_count--;
 }
