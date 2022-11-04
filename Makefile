@@ -21,6 +21,7 @@ LDFLAGS := $(ASAN_LDFLAGS) -pthread -D_GNU_SOURCE
 all: $(TARGET_DIR)/$(COMPILE_TARGET)
 
 $(TARGET_DIR)/$(COMPILE_TARGET): $(OBJS)
+	mkdir -p ./logs
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
 	@chmod +x $<

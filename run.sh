@@ -1,3 +1,4 @@
+#!/bin/bash
 COMPILE_TARGET='socks_proxy'
 TARGET_DIR=./bin
 
