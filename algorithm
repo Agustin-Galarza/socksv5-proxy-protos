@@ -50,3 +50,32 @@ Write socket(O) si write_buffer tiene capacidad
    b. establecer la conexión con el sv
 
    c. comunicarse con el server
+
+
+Proxy:
+   Cliente {
+      client_fd: socket_descriptor
+      buffer_write: buffer
+      buffer_read: buffer
+      origin_fd: socket_descriptor
+      connection_state: state
+
+      origin_address: address
+   }
+
+type address {
+   type: address_type
+   value: address_value
+}
+
+type enum address_type {
+   ipv4
+   ipv6
+   fqdn
+}
+
+type union address_value {
+   value: int
+   value: int
+   value: char *
+}

@@ -13,21 +13,18 @@
 char* print_address_info(struct addrinfo* aip, char addr[]) {
     char buffer[INET6_ADDRSTRLEN];
     const char* addr_aux;
-    if (aip->ai_family == AF_INET)
-    {
+    if (aip->ai_family == AF_INET) {
         struct sockaddr_in* sinp;
         sinp = (struct sockaddr_in*)aip->ai_addr;
         addr_aux = inet_ntop(AF_INET, &sinp->sin_addr, buffer, INET_ADDRSTRLEN);
         if (addr_aux == NULL)
             addr_aux = "unknown";
         strcpy(addr, addr_aux);
-        if (sinp->sin_port != 0)
-        {
-            sprintf(addr + strlen(addr), ": %d", ntohs(sinp->sin_port));
+        if (sinp->sin_port != 0) {
+            sprintf(addr + strlen(addr), ":%d", ntohs(sinp->sin_port));
         }
     }
-    else if (aip->ai_family == AF_INET6)
-    {
+    else if (aip->ai_family == AF_INET6) {
         struct sockaddr_in6* sinp;
         sinp = (struct sockaddr_in6*)aip->ai_addr;
         addr_aux = inet_ntop(AF_INET6, &sinp->sin6_addr, buffer, INET6_ADDRSTRLEN);
@@ -35,7 +32,7 @@ char* print_address_info(struct addrinfo* aip, char addr[]) {
             addr_aux = "unknown";
         strcpy(addr, addr_aux);
         if (sinp->sin6_port != 0)
-            sprintf(addr + strlen(addr), ": %d", ntohs(sinp->sin6_port));
+            sprintf(addr + strlen(addr), ":%d", ntohs(sinp->sin6_port));
     }
     else
         strcpy(addr, "unknown");
@@ -49,8 +46,7 @@ print_address(struct sockaddr* address, char* addr_str) {
 
     in_port_t port;
 
-    switch (address->sa_family)
-    {
+    switch (address->sa_family) {
     case AF_INET:
         numericAddress = &((struct sockaddr_in*)address)->sin_addr;
         port = ntohs(((struct sockaddr_in*)address)->sin_port);
@@ -66,8 +62,7 @@ print_address(struct sockaddr* address, char* addr_str) {
     // Convert binary to printable address
     if (inet_ntop(address->sa_family, numericAddress, addr_str, INET6_ADDRSTRLEN) == NULL)
         strcpy(addr_str, "[invalid address]");
-    else
-    {
+    else {
         if (port != 0)
             sprintf(addr_str + strlen(addr_str), ":%u", port);
     }
@@ -89,4 +84,9 @@ char* get_datetime_string(char* datetime_str) {
         datetime_str[0] = '\0';
 
     return datetime_str;
+}
+
+char* print_address_from_repr(struct address_representation* addr, char* addr_str) {
+    snprintf(addr_str, ADDR_STR_MAX_SIZE, "%s:%s", addr->hostname, addr->port);
+    return addr_str;
 }
