@@ -322,9 +322,11 @@ void selector_destroy(fd_selector s) {
                 }
             }
             pthread_mutex_destroy(&s->resolution_mutex);
-            for (struct blocking_job* j = s->resolution_jobs; j != NULL;
-                 j = j->next) {
-                free(j);
+            struct blocking_job* j = s->resolution_jobs;
+            while (j != NULL) {
+                struct blocking_job* old = j;
+                j = j->next;
+                free(old);
             }
             free(s->fds);
             s->fds = NULL;
@@ -495,8 +497,8 @@ handle_block_notifications(fd_selector s) {
         .s = s,
     };
     pthread_mutex_lock(&s->resolution_mutex);
-    for (struct blocking_job* j = s->resolution_jobs;
-         j != NULL;) {
+    struct blocking_job* j = s->resolution_jobs;
+    while (j != NULL) {
 
         struct item* item = s->fds + j->fd;
         if (ITEM_USED(item)) {
