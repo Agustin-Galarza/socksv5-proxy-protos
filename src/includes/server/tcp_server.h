@@ -2,6 +2,7 @@
 #define TCPSV_H_
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 enum ip_version
 {
@@ -12,7 +13,7 @@ enum ip_version
 struct server_config
 {
     size_t max_clients;
-    const char* port;
+    uint16_t port;
     enum ip_version version;
     int initial_connections;
     const char* logs_filename;

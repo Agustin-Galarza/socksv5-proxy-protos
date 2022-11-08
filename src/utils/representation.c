@@ -8,7 +8,7 @@
 #include <time.h>
 
 #include "utils/representation.h"
-#include "utils/net_utils.h"
+#include "utils/netutils.h"
 
 char* print_address_info(struct addrinfo* aip, char addr[]) {
     char buffer[INET6_ADDRSTRLEN];

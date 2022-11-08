@@ -25,6 +25,7 @@
 #include "utils/selector.h"
 #include "logger/server_log.h"
 #include "parser/client_parser.h"
+#include "utils/netutils.h"
 
  /*********************************
  |          Definitions          |
@@ -95,7 +96,9 @@ struct client_data
     struct addrinfo* resolved_addresses;
     // struct sockaddr* origin_address;
     // socklen_t origin_address_len;
-    fd_selector* selector;
+    fd_selector selector;
+
+    client_parser* parser;
 
     /**
      * Representación legible del cliente para usar en logs y registros:
@@ -131,9 +134,9 @@ struct server_data
 */
 
 struct address_representation origin_global_address = {
-    .type = FQDN,
-    .hostname = "127.0.0.1",
-    .port = "9090",
+    .type = FQDN_ADDR,
+    .hostname = "pampero.itba.edu.ar",
+    .port = "4444",
 };
 
 /*******************************************
@@ -157,8 +160,10 @@ bool add_disconnected_client_log(struct client_data* client);
 
 bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer);
 
+bool close_connection(struct client_data* client);
+
 struct client_data*
-    generate_new_client_data(socket_descriptor client, fd_selector* selector);
+    generate_new_client_data(socket_descriptor client, fd_selector selector);
 
 void free_client_data(struct client_data* data);
 
@@ -170,7 +175,6 @@ bool add_new_client(socket_descriptor client, fd_selector selector);
  * Deja en el cliente la lista de posibles direcciones
  */
 void* resolve_origin_address(void* client_data);
-
 
 socket_descriptor try_connect(struct addrinfo* origin);
 
@@ -298,14 +302,17 @@ bool run_server(struct server_config* config) {
 
     /************* Algorithm *************/
 
+    char port_str[MAX_PORT_STR_LEN];
+    port_itoa(config->port, port_str);
+
     if (listen(server_socket, config->initial_connections) != 0) {
-        log_error("Could not listen to port %s: %s", config->port, strerror(errno));
+        log_error("Could not listen to port %s: %s", port_str, strerror(errno));
 
         error = true;
         goto end;
     }
 
-    log_info("Server waiting for connections on port %s", config->port);
+    log_info("Server waiting for connections on port %s", port_str);
 
     if (selector_fd_set_nio(server_socket) == -1) {
         log_error("Could not handle server socket flags: %s", strerror(errno));
@@ -383,7 +390,14 @@ socket_descriptor server_init(struct server_config* config) {
 
     struct addrinfo* addr_list;
 
-    if (getaddrinfo(NULL, config->port, &addr_config, &addr_list) != 0) {
+    char port_str[MAX_PORT_STR_LEN];
+    if (port_itoa(config->port, port_str) == NULL) {
+        log_error("Could not parse port number");
+
+        return NO_SOCKET;
+    }
+
+    if (getaddrinfo(NULL, port_str, &addr_config, &addr_list) != 0) {
         log_error("Could not parse server config: %s", strerror(errno));
 
         freeaddrinfo(addr_list);
@@ -522,7 +536,7 @@ void handle_sig_kill(int signum) {
     server_active = false;
 }
 
-struct client_data* generate_new_client_data(socket_descriptor client, fd_selector* selector) {
+struct client_data* generate_new_client_data(socket_descriptor client, fd_selector selector) {
     struct client_data* data = malloc(sizeof(struct client_data));
 
     data->read_buffer = malloc(sizeof(struct buffer));
@@ -540,6 +554,10 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
     data->selector = selector;
 
     data->references = 1;
+
+    data->resolved_addresses = NULL;
+
+    data->parser = client_parser_init();
 
     data->client_str = malloc(ADDR_STR_MAX_SIZE);
     print_address_from_descriptor(data->client, data->client_str);
@@ -565,6 +583,7 @@ void free_client_data(struct client_data* data) {
     if (data->client_str != NULL) {
         free(data->client_str);
     }
+    client_parser_free(data->parser);
     // if (data->origin_address != NULL)
     //     free(data->origin_address);
     // TODO: free origin_address_repr when it is allocated
@@ -584,7 +603,7 @@ void free_client_data(struct client_data* data) {
 bool add_new_client(socket_descriptor client, fd_selector selector) {
     // TODO: manage states: we should only want to read from a client after it's connected. Then we'll handle reads and writes as every connection changes states.
     // At first we have to resolve the origin address, meanwhile the new client stays idle
-    struct client_data* data = generate_new_client_data(client, &selector);
+    struct client_data* data = generate_new_client_data(client, selector);
 
     clients[server_data.client_count] = data;
 
@@ -664,9 +683,6 @@ void client_handle_read(struct selector_key* key) {
     socket_descriptor source_descriptor = key->fd;
     struct client_data* data = key->data;
 
-    socket_descriptor client_descriptor = data->client;
-    socket_descriptor origin_descriptor = data->origin;
-
     struct buffer* source_buffer;
     socket_descriptor target_descriptor;
 
@@ -674,7 +690,6 @@ void client_handle_read(struct selector_key* key) {
 
     if (!buffer_can_write(source_buffer)) return;
 
-    char addr_str[ADDR_STR_MAX_SIZE];
     size_t max_write = 0;
 
     uint8_t* source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
@@ -687,54 +702,47 @@ void client_handle_read(struct selector_key* key) {
         log_error("Could not read from client %s: %s", data->client_str, strerror(errno));
         return;
     case 0:
-        // close connection
-        log_info("Closing connection to %s", data->client_str);
-        add_disconnected_client_log(data);
-
-        selector_unregister_fd(selector, client_descriptor);
-        selector_unregister_fd(selector, origin_descriptor);
+        if (close_connection(data))
+            return;
         break;
     default:
         buffer_write_adv(source_buffer, ammount_read);
         source_buff_raw[ammount_read] = '\0';
 
-        print_address_from_descriptor(source_descriptor, addr_str);
-        log_info("New message from %s: %s", addr_str, source_buff_raw);
+        //TODO: el parseo tendría que ser únicamente del cliente al origen 
+        enum parsing_status parser_status;
+        // if parser status is WAITING, start parsing -> change status to PARSING
+        if (client_parser_get_status(data->parser) == CLNT_PARSER_WAITING) {
+            parser_status = start_parsing(data->parser, (char*)source_buff_raw, ammount_read);
+        }
+        else {
+            // parse msg
+            parser_status = keep_parsing(data->parser, ammount_read);
+        }
+        // if error -> handle
+        if (parser_status == CLNT_PARSER_ERROR) {
+            log_error("Could not parse message from client %s: %s",
+                        data->client_str,
+                        client_parser_error_str(data->parser));
+            client_parser_reset(data->parser);
+            return;
+        }
+        if (parser_status == CLNT_PARSER_DONE) {
+            // if done log msg and add write to interests
+            // print_address_from_descriptor(source_descriptor, addr_str);
+            struct parsed_msg* msg = get_parsed_msg(data->parser);
+            log_info("New message from %s: %s", msg->username, msg->msg);
 
-        selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+            // write parsed msg into buffer
+            buffer_reset(source_buffer);
+            source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
+            strncpy((char*)source_buff_raw, msg->msg, max_write);
+            buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));
+            client_parser_reset(data->parser);
 
-        // struct buffer* echo_buffer;
-        // switch (parse_client_message(source_buff_raw, ammount_read, source_descriptor)) {
-        // case CLOSE:
-        //     server_active = false;
-        //     char datetime_str[TIME_FMT_STR_MAX_SIZE];
-
-        //     log_info("Stopping server on %s by order of %s",
-        //         get_datetime_string(datetime_str),
-        //         print_address_from_descriptor(source_descriptor, addr_str));
-        //     write_server_log("Stopping server on %s by order of %s",
-        //         get_datetime_string(datetime_str),
-        //         print_address_from_descriptor(source_descriptor, addr_str));
-        //     break;
-        // case ECHO:
-        //     // TODO: keep list of clients
-        //     // Pass message into write buffer and set socket to write
-        //     echo_buffer = ((struct client_data*)key->data)->read_buffer;
-        //     size_t max_echo_write = 0;
-        //     uint8_t* echo_msg = buffer_write_ptr(echo_buffer, &max_echo_write);
-
-        //     strncpy((char*)echo_msg, (char*)source_buff_raw, max_echo_write);
-        //     size_t ammount_written = (size_t)ammount_read <= max_echo_write ? ammount_read : max_echo_write;
-        //     buffer_write_adv(echo_buffer, ammount_written);
-
-        //     buffer_reset(source_buffer);
-
-        //     selector_set_interest(selector, source_descriptor, OP_WRITE);
-        //     break;
-        // default:
-        //     // Error
-        //     return;
-        // }
+            selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+        }
+        // if not done, keep reading and parsing
         break;
     }
 }
@@ -750,6 +758,27 @@ void client_handle_write(struct selector_key* key) {
     write_to_client(target_descriptor, target_buffer);
 
     selector_set_interest(selector, target_descriptor, OP_READ);
+}
+
+bool close_connection(struct client_data* client) {
+    fd_selector selector = client->selector;
+    socket_descriptor client_descriptor = client->client;
+    socket_descriptor origin_descriptor = client->origin;
+
+    log_info("Closing connection to %s", client->client_str);
+    add_disconnected_client_log(client);
+
+    selector_status status;
+    if ((status = selector_unregister_fd(selector, client_descriptor)) != SELECTOR_SUCCESS) {
+        log_error("Could not close connection with client endpoint from %s: %s", client->client_str, selector_error(status));
+        return true;
+    }
+    if ((status = selector_unregister_fd(selector, origin_descriptor)) != SELECTOR_SUCCESS) {
+        log_error("Could not close connection with origin endpoint from %s: %s", client->client_str, selector_error(status));
+        return true;
+    }
+
+    return false;
 }
 
 void client_handle_close(struct selector_key* key) {
@@ -772,32 +801,34 @@ void* resolve_origin_address(void* client_data) {
 
     log_debug("Resolving address for client %s", data->client_str);
 
+    addr_hints.ai_socktype = SOCK_STREAM;
+    addr_hints.ai_protocol = IPPROTO_TCP;
+    addr_hints.ai_flags = AI_NUMERICSERV;
+
     switch (addr_repr->type) {
-    case FQDN:
+    case FQDN_ADDR:
         addr_hints.ai_family = AF_UNSPEC;
         break;
     case IPV4_ADDR:
         addr_hints.ai_family = AF_INET;
+        addr_hints.ai_flags |= AI_NUMERICHOST;
         break;
     case IPV6_ADDR:
         addr_hints.ai_family = AF_INET6;
+        addr_hints.ai_flags |= AI_NUMERICHOST;
         break;
 
     default:
         // Error
-        log_error("Could not resolve address");
+        log_error("Incorrect address type for representation, trying as FQDN");
+        addr_hints.ai_family = AF_UNSPEC;
         break;
     }
-
-
-    addr_hints.ai_socktype = SOCK_STREAM;
-    addr_hints.ai_protocol = IPPROTO_TCP;
-    addr_hints.ai_flags = AI_NUMERICSERV | AI_NUMERICHOST;
 
     int error;
     if ((error = getaddrinfo(addr_name, port, &addr_hints, &addr_list))) {
         log_error("Could not resolve address: %s", gai_strerror(error));
-        selector_notify_block(*(data->selector), data->client);
+        selector_notify_block(data->selector, data->client);
         return NULL;
     }
 
@@ -806,9 +837,7 @@ void* resolve_origin_address(void* client_data) {
     data->state = CONNECTING;
 
     // informar al selector que terminó la resolución de address
-    // pid_t p = getpid();
-    // kill(p, SIGALRM);
-    selector_notify_block(*(data->selector), data->client);
+    selector_notify_block(data->selector, data->client);
 
     return NULL;
 }

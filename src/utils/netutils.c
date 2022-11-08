@@ -13,8 +13,7 @@
 extern const char*
 sockaddr_to_human(char* buff, const size_t buffsize,
                   const struct sockaddr* addr) {
-    if (addr == 0)
-    {
+    if (addr == 0) {
         strncpy(buff, "null", buffsize);
         return buff;
     }
@@ -22,8 +21,7 @@ sockaddr_to_human(char* buff, const size_t buffsize,
     void* p = 0x00;
     bool handled = false;
 
-    switch (addr->sa_family)
-    {
+    switch (addr->sa_family) {
     case AF_INET:
         p = &((struct sockaddr_in*)addr)->sin_addr;
         port = ((struct sockaddr_in*)addr)->sin_port;
@@ -35,16 +33,13 @@ sockaddr_to_human(char* buff, const size_t buffsize,
         handled = true;
         break;
     }
-    if (handled)
-    {
-        if (inet_ntop(addr->sa_family, p, buff, buffsize) == 0)
-        {
+    if (handled) {
+        if (inet_ntop(addr->sa_family, p, buff, buffsize) == 0) {
             strncpy(buff, "unknown ip", buffsize);
             buff[buffsize - 1] = 0;
         }
     }
-    else
-    {
+    else {
         strncpy(buff, "unknown", buffsize);
     }
 
@@ -52,8 +47,7 @@ sockaddr_to_human(char* buff, const size_t buffsize,
     buff[buffsize - 1] = 0;
     const size_t len = strlen(buff);
 
-    if (handled)
-    {
+    if (handled) {
         snprintf(buff + len, buffsize - len, "%d", ntohs(port));
     }
     buff[buffsize - 1] = 0;
@@ -67,12 +61,10 @@ int sock_blocking_write(const int fd, buffer* b) {
     size_t n;
     uint8_t* ptr;
 
-    do
-    {
+    do {
         ptr = buffer_read_ptr(b, &n);
         nwritten = send(fd, ptr, n, MSG_NOSIGNAL);
-        if (nwritten > 0)
-        {
+        if (nwritten > 0) {
             buffer_read_adv(b, nwritten);
         }
         else /* if (errno != EINTR) */
@@ -89,15 +81,12 @@ int sock_blocking_copy(const int source, const int dest) {
     int ret = 0;
     char buf[4096];
     ssize_t nread;
-    while ((nread = recv(source, buf, N(buf), 0)) > 0)
-    {
+    while ((nread = recv(source, buf, N(buf), 0)) > 0) {
         char* out_ptr = buf;
         ssize_t nwritten;
-        do
-        {
+        do {
             nwritten = send(dest, out_ptr, nread, MSG_NOSIGNAL);
-            if (nwritten > 0)
-            {
+            if (nwritten > 0) {
                 nread -= nwritten;
                 out_ptr += nwritten;
             }
@@ -111,4 +100,23 @@ int sock_blocking_copy(const int source, const int dest) {
 error:
 
     return ret;
+}
+
+struct sockaddr get_socket_addr(int socket_descriptor) {
+    struct sockaddr_storage client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    struct sockaddr* sock_addr_ptr = (struct sockaddr*)&client_addr;
+    getpeername(socket_descriptor, sock_addr_ptr, &client_addr_len);
+    return *sock_addr_ptr;
+}
+
+char* port_itoa(uint16_t port, char portstr[MAX_PORT_STR_LEN]) {
+    int ret = snprintf(portstr, MAX_PORT_STR_LEN, "%u", port);
+    if (ret < 0)
+        goto error;
+
+    return portstr;
+error:
+    portstr[0] = '\0';
+    return NULL;
 }

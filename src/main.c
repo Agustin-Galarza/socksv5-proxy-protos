@@ -26,12 +26,11 @@ int main(int argc, char** argv) {
     struct server_config config_args;
     config_args.initial_connections = 3;
     config_args.max_clients = 400;
-    config_args.port = "8080";
+    config_args.port = 8080;
     config_args.version = IPV4;
     config_args.logs_filename = "logs/server_logs.log";
 
-    if (run_server(&config_args))
-    {
+    if (run_server(&config_args)) {
         log_error("Error while running server");
         exit(1);
     }

@@ -3,6 +3,8 @@
 
 #include <sys/socket.h>
 #include <netdb.h>
+
+#include "utils/netutils.h" // MAX_PORT_STR_LEN
 #define TIME_FMT_STR_MAX_SIZE 128
 
 #define ADDR_STR_MAX_SIZE 128
@@ -16,12 +18,12 @@
 enum address_type {
     IPV4_ADDR,
     IPV6_ADDR,
-    FQDN
+    FQDN_ADDR
 };
 struct address_representation {
     enum address_type type;
     char* hostname;
-    char* port;
+    char port[MAX_PORT_STR_LEN];
 };
 
 // reads addr_info struct and writes the address in addr_str and also returns it
