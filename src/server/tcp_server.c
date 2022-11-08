@@ -135,8 +135,8 @@ struct server_data
 
 struct address_representation origin_global_address = {
     .type = FQDN_ADDR,
-    .hostname = "pampero.itba.edu.ar",
-    .port = "4444",
+    .hostname = "localhost",
+    .port = "9090",
 };
 
 /*******************************************
@@ -505,20 +505,20 @@ bool add_disconnected_client_log(struct client_data* client) {
 }
 
 bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer) {
+    if (!buffer_can_read(client_buffer)) return false;
     size_t max_read = 0;
     uint8_t* msg = buffer_read_ptr(client_buffer, &max_read);
-    if (max_read != 0) {
-        ssize_t chars_written = send(client_socket, msg, max_read, 0);
-        if (chars_written == -1)
-            return true;
+    ssize_t chars_written = send(client_socket, msg, max_read, 0);
+    if (chars_written == -1)
+        return true;
 
-        if ((size_t)chars_written < max_read) {
-            buffer_read_adv(client_buffer, chars_written);
-        }
-        else {
-            buffer_reset(client_buffer);
-        }
+    if ((size_t)chars_written < max_read) {
+        buffer_read_adv(client_buffer, chars_written);
     }
+    else {
+        buffer_reset(client_buffer);
+    }
+
     return false;
 }
 
@@ -540,10 +540,10 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
     struct client_data* data = malloc(sizeof(struct client_data));
 
     data->read_buffer = malloc(sizeof(struct buffer));
-    buffer_init(data->read_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
+    buffer_init(data->read_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE + 1));
 
     data->write_buffer = malloc(sizeof(struct buffer));
-    buffer_init(data->write_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE));
+    buffer_init(data->write_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE + 1));
 
     data->state = RESOLVE_ADDRESS;
 
@@ -694,8 +694,6 @@ void client_handle_read(struct selector_key* key) {
 
     uint8_t* source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
 
-    if (max_write == 0)
-        return;
     int ammount_read = read(source_descriptor, source_buff_raw, max_write);
     switch (ammount_read) {
     case -1:
@@ -719,6 +717,8 @@ void client_handle_read(struct selector_key* key) {
             // parse msg
             parser_status = keep_parsing(data->parser, ammount_read);
         }
+        buffer_reset(source_buffer);
+
         // if error -> handle
         if (parser_status == CLNT_PARSER_ERROR) {
             log_error("Could not parse message from client %s: %s",
@@ -734,7 +734,7 @@ void client_handle_read(struct selector_key* key) {
             log_info("New message from %s: %s", msg->username, msg->msg);
 
             // write parsed msg into buffer
-            buffer_reset(source_buffer);
+            // buffer_reset(source_buffer);
             source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
             strncpy((char*)source_buff_raw, msg->msg, max_write);
             buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));

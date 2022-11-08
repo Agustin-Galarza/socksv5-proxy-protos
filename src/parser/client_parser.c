@@ -123,28 +123,40 @@ enum parsing_status keep_parsing(client_parser* parser, size_t extra_len) {
         }
         parser->state = USERNAME_RETR;
     case USERNAME_RETR:
-        for (;parser->curr_char < parser->msg_len && parser->msg[parser->curr_char] != SEPARATION_TOKEN; parser->curr_char++) {
-            if (parser->username_index > MAX_USRNAME_LEN) {
+        for (;parser->curr_char < parser->msg_len && parser->msg[parser->curr_char - (parser->msg_len - extra_len)] != SEPARATION_TOKEN; parser->curr_char++) {
+            if (parser->username_index >= MAX_USRNAME_LEN) {
                 parser->status = CLNT_PARSER_ERROR;
                 parser->error_status = CLNT_PARSER_USRNAME_TOO_LONG;
                 goto end;
             }
-            parser->parsed_msg->username[parser->username_index] = parser->msg[parser->curr_char];
+            parser->parsed_msg->username[parser->username_index] = parser->msg[parser->curr_char - (parser->msg_len - extra_len)];
+
             parser->username_index++;
         }
+        if (parser->msg[parser->curr_char - (parser->msg_len - extra_len)] != SEPARATION_TOKEN)
+            break;
+
         parser->curr_char++;
         parser->parsed_msg->username[parser->username_index] = '\0';
         parser->state = MSG_RETR;
     case MSG_RETR:
-        for (;parser->curr_char < parser->msg_len && parser->msg[parser->curr_char] != END_TOKEN; parser->curr_char++) {
-            if (parser->msg_index > MAX_MSG_LEN) {
+        for (;parser->curr_char < parser->msg_len && parser->msg[parser->curr_char - (parser->msg_len - extra_len)] != END_TOKEN; parser->curr_char++) {
+            if (parser->msg_index >= MAX_MSG_LEN) {
                 parser->status = CLNT_PARSER_ERROR;
                 parser->error_status = CLNT_PARSER_MSG_TOO_LONG;
                 goto end;
             }
-            parser->parsed_msg->msg[parser->msg_index] = parser->msg[parser->curr_char];
+            if (parser->msg[parser->curr_char - (parser->msg_len - extra_len)] == NEW_LINE_REPR) {
+                parser->parsed_msg->msg[parser->msg_index] = '\n';
+            }
+            else {
+                parser->parsed_msg->msg[parser->msg_index] = parser->msg[parser->curr_char - (parser->msg_len - extra_len)];
+            }
             parser->msg_index++;
         }
+        if (parser->msg[parser->curr_char - (parser->msg_len - extra_len)] != END_TOKEN)
+            break;
+
         parser->parsed_msg->msg[parser->msg_index] = '\0';
         parser->state = DONE;
         parser->status = CLNT_PARSER_DONE;

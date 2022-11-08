@@ -7,6 +7,7 @@
 #define MAX_USRNAME_LEN 20
 #define MAX_MSG_LEN 30
 #define END_TOKEN '\n'
+#define NEW_LINE_REPR '\\'
 
 /**
  * Parser para un protocolo definido como
