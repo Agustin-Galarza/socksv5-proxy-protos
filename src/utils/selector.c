@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <sys/signal.h>
+#include <signal.h>
 
 #include "utils/selector.h"
 
@@ -340,10 +340,10 @@ void selector_destroy(fd_selector s) {
 
 selector_status
 selector_register(fd_selector s,
-                  const int fd,
-                  const fd_handler* handler,
-                  const fd_interest interest,
-                  void* data) {
+    const int fd,
+    const fd_handler* handler,
+    const fd_interest interest,
+    void* data) {
     selector_status ret = SELECTOR_SUCCESS;
     // 0. validación de argumentos
     if (s == NULL || INVALID_FD(fd) || handler == NULL) {
@@ -384,7 +384,7 @@ selector_register(fd_selector s,
 
 selector_status
 selector_unregister_fd(fd_selector s,
-                       const int fd) {
+    const int fd) {
     selector_status ret = SELECTOR_SUCCESS;
 
     if (NULL == s || INVALID_FD(fd)) {
@@ -516,7 +516,7 @@ handle_block_notifications(fd_selector s) {
 
 selector_status
 selector_notify_block(fd_selector s,
-                      const int fd) {
+    const int fd) {
     selector_status ret = SELECTOR_SUCCESS;
 
     // TODO(juan): usar un pool
@@ -552,7 +552,7 @@ selector_select(fd_selector s) {
     s->selector_thread = pthread_self();
 
     int fds = pselect(s->max_fd + 1, &s->slave_r, &s->slave_w, 0, &s->slave_t,
-                      &emptyset);
+        &emptyset);
     if (-1 == fds) {
         switch (errno) {
         case EAGAIN:

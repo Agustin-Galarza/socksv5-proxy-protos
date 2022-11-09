@@ -532,7 +532,11 @@ void handle_sig_kill(int signum) {
     get_datetime_string(datetime_str);
 
     char log_msg[LOGS_BUFFER_SIZE];
+
+#ifdef __GLIBC__ 
     snprintf(log_msg, LOGS_BUFFER_SIZE, "Server abruptly stopped on %s by %s", get_datetime_string(datetime_str), strsignal(signum));
+#endif
+
 
     log_warning(log_msg);
     fprintf(get_file_data().stream, "%s\n", log_msg);

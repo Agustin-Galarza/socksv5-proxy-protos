@@ -1,6 +1,10 @@
 #ifndef NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 #define NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 
+#ifdef __APPLE__
+#define MSG_NOSIGNAL 0x2000
+#endif
+
 #include <netinet/in.h>
 #include <sys/socket.h>
 
@@ -22,7 +26,7 @@
  */
 const char*
 sockaddr_to_human(char* buff, const size_t buffsize,
-                  const struct sockaddr* addr);
+    const struct sockaddr* addr);
 
 /**
  * Escribe n bytes de buff en fd de forma bloqueante
