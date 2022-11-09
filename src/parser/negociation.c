@@ -58,3 +58,21 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
 int negociation_parser_is_finished(struct negociation_parser* parser) {
     return parser->state == NEGOCIATION_DONE;
 }
+
+int negociation_parser_has_error(struct negociation_parser* parser) {
+    return parser->state == NEGOCIATION_ERROR;
+}
+
+bool negociation_parser_consume(buffer* buff, struct negociation_parser* parser) {
+    while (buffer_can_read(buff)) {
+        uint8_t byte = buffer_read(buff);
+        negociation_paser_feed(parser, byte);
+        if (negociation_parser_has_error(parser)) {
+            return PARSER_FINISH_ERROR;
+        }
+        if (negociation_parser_is_finished(parser)) {
+            break;
+        }
+    }
+    return negociation_parser_is_finished(parser) ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
+}

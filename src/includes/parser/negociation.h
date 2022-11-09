@@ -2,12 +2,16 @@
 #define NEGOCIATION_H
 
 #include <stdint.h>
+#include "utils/buffer.h"
 
 #define ALLOWED_METHODS_AMOUNT 2
 #define NO_AUTENTICATION 0x00
 #define USERNAME_PASSWORD 0x02
 #define VERSION 0x05
 
+#define PARSER_FINISH_OK 1
+#define PARSER_FINISH_ERROR 0
+#define PARSER_NOT_FINISH 2
 
 // Estados de la negociación
 enum negociation_state {
@@ -35,5 +39,10 @@ enum negociation_state negociation_parser_feed(struct negociation_parser* parser
 // Checkea si llego al estado final
 int negociation_parser_is_finished(struct negociation_parser* parser);
 
+// Ckeckea si hay error
+int negociation_parser_has_error(struct negociation_parser* parser);
+
+// Consumo buffer. Retorna 0 si hubo error, 1 si termino la negociación y 2 si no termino
+bool negociation_parser_consume(buffer* buff, struct negociation_parser* parser);
 
 #endif
