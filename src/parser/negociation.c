@@ -1,13 +1,22 @@
 #include "parser/negociation.h"
 #include "logger/logger.h"
+#include <string.h>
 
-void negociation_parser_init(struct negociation_parser* parser) {
+struct negociation_parser* negociation_parser_init() {
+    struct negociation_parser* parser = malloc(sizeof(struct negociation_parser));
+
+
     parser->state = NEGOCIATION_VERSION;
     parser->version = 0;
     parser->nmethods = 0;
-    for (int i = 0; i < ALLOWED_METHODS_AMOUNT; i++) {
-        parser->methods[i] = 0;
-    }
+
+    memset(parser->methods, NO_ACCEPTABLE_METHODS, ALLOWED_METHODS_AMOUNT);
+
+    return parser;
+}
+
+void negociation_parser_free(struct negociation_parser* parser) {
+    free(parser);
 }
 
 enum negociation_state negociation_paser_feed(struct negociation_parser* parser, uint8_t byte) {
@@ -16,31 +25,32 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
         if (byte == VERSION) {
             parser->version = byte;
             parser->state = NEGOCIATION_NMETHODS;
+
             log_debug("Version correcta");
         }
         else {
             parser->state = NEGOCIATION_ERROR;
-            log_debug("Version incorrecta");
+            log_debug("Version incorrecta: %d", byte);
         }
         break;
     case NEGOCIATION_NMETHODS:
-        if (byte > 0 && byte <= ALLOWED_METHODS_AMOUNT) {
-            parser->nmethods = byte;
-            parser->state = NEGOCIATION_METHODS;
-            log_debug("Cantidad de metodos correcta");
-        }
-        else {
-            parser->state = NEGOCIATION_ERROR;
-            log_debug("Cantidad de metodos incorrecta");
-        }
+        parser->nmethods = byte;
+        parser->state = NEGOCIATION_METHODS;
+        log_debug("Cantidad de metodos correcta");
         break;
     case NEGOCIATION_METHODS:
-        for (int i = 0; i < parser->nmethods; i++) {
-            if (parser->methods[i] == 0) {
-                parser->methods[i] = byte;
-                break;
+        while (parser->nmethods > 0) {
+            if (byte == NO_AUTENTICATION || byte == USERNAME_PASSWORD) {
+                parser->methods[parser->nmethods - 1] = byte;
+                parser->nmethods--;
+                log_debug("Metodo correcto");
+            }
+            else {
+                parser->state = NEGOCIATION_ERROR;
+                log_debug("Metodo incorrecto");
             }
         }
+
         parser->state = NEGOCIATION_DONE;
         log_debug("Metodo correcto");
 
@@ -56,14 +66,14 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
 }
 
 int negociation_parser_is_finished(struct negociation_parser* parser) {
-    return parser->state == NEGOCIATION_DONE;
+    return parser->state == NEGOCIATION_DONE ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
 }
 
 int negociation_parser_has_error(struct negociation_parser* parser) {
     return parser->state == NEGOCIATION_ERROR;
 }
 
-bool negociation_parser_consume(buffer* buff, struct negociation_parser* parser) {
+int negociation_parser_consume(buffer* buff, struct negociation_parser* parser) {
     while (buffer_can_read(buff)) {
         uint8_t byte = buffer_read(buff);
         negociation_paser_feed(parser, byte);
@@ -74,5 +84,9 @@ bool negociation_parser_consume(buffer* buff, struct negociation_parser* parser)
             break;
         }
     }
-    return negociation_parser_is_finished(parser) ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
+    return negociation_parser_is_finished(parser);
+}
+
+void negociation_parser_reset(struct negociation_parser* parser) {
+    negociation_parser_init(parser);
 }

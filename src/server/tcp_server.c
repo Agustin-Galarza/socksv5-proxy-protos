@@ -26,6 +26,7 @@
 #include "logger/server_log.h"
 #include "parser/client_parser.h"
 #include "utils/netutils.h"
+#include "parser/negociation.h"
 
  /*********************************
  |          Definitions          |
@@ -61,6 +62,7 @@ typedef int socket_descriptor;
    i. COPY
 */
 enum connection_state {
+    NEGOCIATING,
     RESOLVE_ADDRESS,
     CONNECTING,
     COPY
@@ -99,6 +101,7 @@ struct client_data
     fd_selector selector;
 
     client_parser* parser;
+    struct negociation_parser* negociation_parser;
 
     /**
      * Representación legible del cliente para usar en logs y registros:
@@ -166,6 +169,8 @@ struct client_data*
     generate_new_client_data(socket_descriptor client, fd_selector selector);
 
 void free_client_data(struct client_data* data);
+
+bool read_new_request_from_client(struct client_data* data);
 
 bool add_new_client(socket_descriptor client, fd_selector selector);
 
@@ -344,14 +349,14 @@ bool run_server(struct server_config* config) {
         goto end;
     }
 
-    struct logs_file_data file_data = get_file_data();
-    status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &file_data);
-    if (status != SELECTOR_SUCCESS) {
-        log_error("Could not register logs file");
+    // struct logs_file_data file_data = get_file_data();
+    // status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &file_data);
+    // if (status != SELECTOR_SUCCESS) {
+    //     log_error("Could not register logs file");
 
-        error = true;
-        goto end;
-    }
+    //     error = true;
+    //     goto end;
+    // }
 
     /** Loop del servidor **/
 
@@ -559,6 +564,8 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
 
     data->parser = client_parser_init();
 
+    data->negociation_parser = negociation_parser_init();
+
     data->client_str = malloc(ADDR_STR_MAX_SIZE);
     print_address_from_descriptor(data->client, data->client_str);
     // data->origin_address = NULL;
@@ -584,6 +591,7 @@ void free_client_data(struct client_data* data) {
         free(data->client_str);
     }
     client_parser_free(data->parser);
+    negociation_parser_free(data->negociation_parser);
     // if (data->origin_address != NULL)
     //     free(data->origin_address);
     // TODO: free origin_address_repr when it is allocated
@@ -612,17 +620,18 @@ bool add_new_client(socket_descriptor client, fd_selector selector) {
     }
     server_data.client_count++;
 
-    // (READ_HELLO, WRITE_HELLO)
+    return read_new_request_from_client(data);
+}
 
+bool read_new_request_from_client(struct client_data* data) {
     // READ_REQUEST
     data->origin_address_repr = &origin_global_address;
     char host_addr_buff[ADDR_STR_MAX_SIZE];
     log_debug("Requested address %s for client %s",
-            print_address_from_repr(data->origin_address_repr, host_addr_buff),
-            data->client_str);
+        print_address_from_repr(data->origin_address_repr, host_addr_buff),
+        data->client_str);
     /* GET_ADDR */
     data->state = RESOLVE_ADDRESS;
-
 
     pthread_t tid;
     pthread_create(&tid, NULL, resolve_origin_address, (void*)data);
@@ -665,9 +674,9 @@ void handle_file_write(struct selector_key* key) {
 
 // Util
 static void get_targets(socket_descriptor source_descriptor,
-                struct client_data* data,
-                struct buffer** target_buffer,
-                socket_descriptor* target_descriptor) {
+    struct client_data* data,
+    struct buffer** target_buffer,
+    socket_descriptor* target_descriptor) {
     if (source_descriptor == data->client) {
         *target_descriptor = data->origin;
         *target_buffer = data->write_buffer;
@@ -705,44 +714,65 @@ void client_handle_read(struct selector_key* key) {
         break;
     default:
         buffer_write_adv(source_buffer, ammount_read);
-        source_buff_raw[ammount_read] = '\0';
 
-        //TODO: el parseo tendría que ser únicamente del cliente al origen 
-        enum parsing_status parser_status;
-        // if parser status is WAITING, start parsing -> change status to PARSING
-        if (client_parser_get_status(data->parser) == CLNT_PARSER_WAITING) {
-            parser_status = start_parsing(data->parser, (char*)source_buff_raw, ammount_read);
-        }
-        else {
-            // parse msg
-            parser_status = keep_parsing(data->parser, ammount_read);
-        }
-        buffer_reset(source_buffer);
+        // Leo del cliente y parseo el mensaje de negociacion
+        // Si el mensaje es invalido, cierro la conexion
+        // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
+        log_debug("Starting negociation with client %s", data->client_str);
+        data->state = NEGOCIATING;
+        int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
 
-        // if error -> handle
-        if (parser_status == CLNT_PARSER_ERROR) {
-            log_error("Could not parse message from client %s: %s",
-                        data->client_str,
-                        client_parser_error_str(data->parser));
-            client_parser_reset(data->parser);
+        if (negociation_parser_result == PARSER_FINISH_OK)
+            selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+
+        if (negociation_parser_result == PARSER_FINISH_ERROR) {
+            log_error("Could not negociate with client %s", data->client_str);
+            close_connection(data);
             return;
         }
-        if (parser_status == CLNT_PARSER_DONE) {
-            // if done log msg and add write to interests
-            // print_address_from_descriptor(source_descriptor, addr_str);
-            struct parsed_msg* msg = get_parsed_msg(data->parser);
-            log_info("New message from %s: %s", msg->username, msg->msg);
 
-            // write parsed msg into buffer
-            // buffer_reset(source_buffer);
-            source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
-            strncpy((char*)source_buff_raw, msg->msg, max_write);
-            buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));
-            client_parser_reset(data->parser);
-
-            selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+        if (negociation_parser_result == PARSER_NOT_FINISH) {
+            log_debug("Negociation with client %s not finished", data->client_str);
         }
-        // if not done, keep reading and parsing
+
+        // source_buff_raw[ammount_read] = '\0';
+
+        // //TODO: el parseo tendría que ser únicamente del cliente al origen 
+        // enum parsing_status parser_status;
+        // // if parser status is WAITING, start parsing -> change status to PARSING
+        // if (client_parser_get_status(data->parser) == CLNT_PARSER_WAITING) {
+        //     parser_status = start_parsing(data->parser, (char*)source_buff_raw, ammount_read);
+        // }
+        // else {
+        //     // parse msg
+        //     parser_status = keep_parsing(data->parser, ammount_read);
+        // }
+        // buffer_reset(source_buffer);
+
+        // // if error -> handle
+        // if (parser_status == CLNT_PARSER_ERROR) {
+        //     log_error("Could not parse message from client %s: %s",
+        //         data->client_str,
+        //         client_parser_error_str(data->parser));
+        //     client_parser_reset(data->parser);
+        //     return;
+        // }
+        // if (parser_status == CLNT_PARSER_DONE) {
+        //     // if done log msg and add write to interests
+        //     // print_address_from_descriptor(source_descriptor, addr_str);
+        //     struct parsed_msg* msg = get_parsed_msg(data->parser);
+        //     log_info("New message from %s: %s", msg->username, msg->msg);
+
+        //     // write parsed msg into buffer
+        //     // buffer_reset(source_buffer);
+        //     source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
+        //     strncpy((char*)source_buff_raw, msg->msg, max_write);
+        //     buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));
+        //     client_parser_reset(data->parser);
+
+        //     selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+        // }
+        // // if not done, keep reading and parsing
         break;
     }
 }
@@ -853,11 +883,11 @@ void connect_client(struct selector_key* key) {
 
     char origin_addr_buff[ADDR_STR_MAX_SIZE];
     log_info("Connecting client %s to address %s",
-            data->client_str,
-            print_address_info(addr_list, origin_addr_buff));
+        data->client_str,
+        print_address_info(addr_list, origin_addr_buff));
     write_server_log("Connecting client %s to address %s",
-            data->client_str,
-            print_address_info(addr_list, origin_addr_buff));
+        data->client_str,
+        print_address_info(addr_list, origin_addr_buff));
 
     socket_descriptor origin = NO_SOCKET;
     for (;addr_list != NULL; addr_list = addr_list->ai_next) {
