@@ -1,4 +1,4 @@
-COMPILE_TARGET := socks_proxy
+COMPILE_TARGET := socks5d
 
 SRC_DIR := ./src
 BUILD_DIR := ./build

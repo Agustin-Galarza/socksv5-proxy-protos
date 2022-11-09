@@ -11,7 +11,7 @@
 #endif
 
 int main(int argc, char** argv) {
-    struct logger_init_args args = {
+    struct logger_init_args logger_args = {
         .logs_enabled = true,
         .stderr_enabled = true,
         .level_config = {
@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
             DEFAULT_INFO_CONFIG,   // INFO
             DEFAULT_WARNING_CONFIG // WARNING
         } };
-    logger_init(&args);
+    logger_init(&logger_args);
     atexit(logger_cleanup);
 
     struct server_config config_args;

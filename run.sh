@@ -1,5 +1,5 @@
 #!/bin/bash
-COMPILE_TARGET='socks_proxy'
+COMPILE_TARGET='socks5d'
 TARGET_DIR=./bin
 
 chmod +x $TARGET_DIR/$COMPILE_TARGET
