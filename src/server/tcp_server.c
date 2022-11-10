@@ -31,13 +31,23 @@
  |          Definitions          |
  *********************************/
 
-#define NO_SOCKET -1
-
 #define CLIENT_BUFFER_SIZE 1024
 
 #define MAX_CLIENTS_AMOUNT 500
 
-typedef int socket_descriptor;
+#define IPV4_HOST_ADDR "127.0.0.1"
+
+#define IPV6_HOST_ADDR "::"
+
+struct socket_descriptors {
+    socket_descriptor ipv4_fd;
+    socket_descriptor ipv6_fd;
+};
+
+struct server_sockets {
+    struct socket_descriptors socks5;
+    struct socket_descriptors admin;
+};
 
 
 /*
@@ -125,7 +135,7 @@ struct client_data** clients;
 struct server_data
 {
     size_t max_clients;
-    socket_descriptor fd;
+    struct server_sockets sockets;
     size_t client_count;
 } server_data;
 
@@ -145,9 +155,15 @@ struct address_representation origin_global_address = {
 
 void handle_sig_kill(int signum);
 
-socket_descriptor
-server_init(struct server_config* config);
+struct server_sockets
+    server_init(struct server_config* config);
 
+bool start_listening(socket_descriptor socket, int max_connections);
+
+socket_descriptor
+setup_passive_socket(struct sockaddr* sockaddr_ptr, size_t sockaddr_size);
+
+void close_sockets(struct server_sockets sockets);
 /**
  * @brief accepts new connection and returns the new client's socket descriptor
  */
@@ -179,7 +195,8 @@ void* resolve_origin_address(void* client_data);
 socket_descriptor try_connect(struct addrinfo* origin);
 
 // Event Handlers
-void server_handle_read(struct selector_key* key);
+
+void socks5_server_handle_read(struct selector_key* key);
 
 void handle_file_write(struct selector_key* key);
 
@@ -202,8 +219,15 @@ client_handlers = {
 };
 
 static const struct fd_handler
-server_handlers = {
-        .handle_read = server_handle_read,
+socks5_server_handlers = {
+        .handle_read = socks5_server_handle_read,
+        .handle_write = NULL,
+        .handle_close = NULL,
+};
+
+static const struct fd_handler
+admin_server_handlers = {
+        .handle_read = socks5_server_handle_read,
         .handle_write = NULL,
         .handle_close = NULL,
 };
@@ -265,7 +289,8 @@ bool run_server(struct server_config* config) {
     clients = malloc(sizeof(struct client_data*) * MAX_CLIENTS_AMOUNT);
 
     fd_selector selector = NULL;
-    socket_descriptor server_socket = NO_SOCKET;
+    struct server_sockets sockets;
+    memset(&sockets, NO_SOCKET, sizeof(sockets));
 
     const struct selector_init init_args = {
         .select_timeout = {
@@ -292,9 +317,9 @@ bool run_server(struct server_config* config) {
     }
     free(time_msg);
 
-    server_socket = server_init(config);
+    sockets = server_init(config);
 
-    if (server_socket == NO_SOCKET) {
+    if (sockets.socks5.ipv4_fd == NO_SOCKET) {
         log_error("Could not initialize server");
         error = true;
         goto end;
@@ -305,20 +330,26 @@ bool run_server(struct server_config* config) {
     char port_str[MAX_PORT_STR_LEN];
     port_itoa(config->port, port_str);
 
-    if (listen(server_socket, config->initial_connections) != 0) {
-        log_error("Could not listen to port %s: %s", port_str, strerror(errno));
-
+    // Set all sockets to listen
+    if (start_listening(sockets.socks5.ipv4_fd, config->max_clients)) {
+        error = true;
+        goto end;
+    }
+    if (start_listening(sockets.socks5.ipv6_fd, config->max_clients)) {
+        error = true;
+        goto end;
+    }
+    if (start_listening(sockets.admin.ipv4_fd, config->max_clients)) {
+        error = true;
+        goto end;
+    }
+    if (start_listening(sockets.admin.ipv6_fd, config->max_clients)) {
         error = true;
         goto end;
     }
 
     log_info("Server waiting for connections on port %s", port_str);
 
-    if (selector_fd_set_nio(server_socket) == -1) {
-        log_error("Could not handle server socket flags: %s", strerror(errno));
-        error = true;
-        goto end;
-    }
 
     // inicializamos el selector
     if (selector_init(&init_args)) {
@@ -336,7 +367,7 @@ bool run_server(struct server_config* config) {
         goto end;
     }
 
-    selector_status status = selector_register(selector, server_socket, &server_handlers, OP_READ, &server_data);
+    selector_status status = selector_register(selector, sockets.socks5.ipv4_fd, &socks5_server_handlers, OP_READ, &server_data);
     if (status != SELECTOR_SUCCESS) {
         log_error("Could not register server socket");
 
@@ -344,14 +375,14 @@ bool run_server(struct server_config* config) {
         goto end;
     }
 
-    struct logs_file_data file_data = get_file_data();
-    status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &file_data);
-    if (status != SELECTOR_SUCCESS) {
-        log_error("Could not register logs file");
+    // struct logs_file_data file_data = get_file_data();
+    // status = selector_register(selector, logs_file_fd, &logs_file_handlers, OP_WRITE, &file_data);
+    // if (status != SELECTOR_SUCCESS) {
+    //     log_error("Could not register logs file");
 
-        error = true;
-        goto end;
-    }
+    //     error = true;
+    //     goto end;
+    // }
 
     /** Loop del servidor **/
 
@@ -371,84 +402,117 @@ bool run_server(struct server_config* config) {
 end:
     selector_destroy(selector);
     selector_close();
-    int prev_errno = errno;
-    if (close(server_socket)) errno = prev_errno;
+    close_sockets(sockets);
     free_server_logger();
 
     return error;
 }
 
-socket_descriptor server_init(struct server_config* config) {
+struct server_sockets
+    server_init(struct server_config* config) {
+    struct server_sockets sockets;
+    memset(&sockets, NO_SOCKET, sizeof(sockets));
+
+    // Socks5 IPv4
+    struct sockaddr_in socks5_ipv4_sockaddr;
+    memset(&socks5_ipv4_sockaddr, 0, sizeof(socks5_ipv4_sockaddr));
+    socks5_ipv4_sockaddr.sin_family = AF_INET;
+    socks5_ipv4_sockaddr.sin_port = htons(config->port);
+    socks5_ipv4_sockaddr.sin_addr.s_addr = inet_addr(IPV4_HOST_ADDR);
+
+    sockets.socks5.ipv4_fd = setup_passive_socket((struct sockaddr*)&socks5_ipv4_sockaddr, sizeof(socks5_ipv4_sockaddr));
+    if (sockets.socks5.ipv4_fd == NO_SOCKET) {
+        log_error("Could not create socks5 IPv4 socket");
+
+        return sockets;
+    }
+
+    // Socks5 IPv6
+    struct sockaddr_in6 socks5_ipv6_sockaddr;
+    socks5_ipv6_sockaddr.sin6_family = AF_INET6;
+    socks5_ipv6_sockaddr.sin6_port = htons(config->port);
+    socks5_ipv6_sockaddr.sin6_addr = in6addr_loopback;
+
+    sockets.socks5.ipv6_fd = setup_passive_socket((struct sockaddr*)&socks5_ipv6_sockaddr, sizeof(socks5_ipv6_sockaddr));
+    if (sockets.socks5.ipv6_fd == NO_SOCKET) {
+        log_error("Could not create socks5 IPv6 socket");
+
+        return sockets;
+    }
+
+    // Admin IPv4
+    struct sockaddr_in admin_ipv4_sockaddr;
+    memset(&admin_ipv4_sockaddr, 0, sizeof(admin_ipv4_sockaddr));
+    admin_ipv4_sockaddr.sin_family = AF_INET;
+    admin_ipv4_sockaddr.sin_port = htons(config->admin_port);
+    admin_ipv4_sockaddr.sin_addr.s_addr = inet_addr(IPV4_HOST_ADDR);
+
+    sockets.admin.ipv4_fd = setup_passive_socket((struct sockaddr*)&admin_ipv4_sockaddr, sizeof(admin_ipv4_sockaddr));
+    if (sockets.admin.ipv4_fd == NO_SOCKET) {
+        log_error("Could not create admin IPv4 socket");
+
+        return sockets;
+    }
+
+    // Admin IPv6
+    struct sockaddr_in6 admin_ipv6_sockaddr;
+    admin_ipv6_sockaddr.sin6_family = AF_INET6;
+    admin_ipv6_sockaddr.sin6_port = htons(config->admin_port);
+    admin_ipv6_sockaddr.sin6_addr = in6addr_loopback;
+    // inet_pton(AF_INET6, IPV6_HOST_ADDR, &admin_ipv6_sockaddr.sin6_addr);
+
+    sockets.admin.ipv6_fd = setup_passive_socket((struct sockaddr*)&admin_ipv6_sockaddr, sizeof(admin_ipv6_sockaddr));
+    if (sockets.admin.ipv6_fd == NO_SOCKET) {
+        log_error("Could not create admin IPv6 socket");
+
+        return sockets;
+    }
+
+    // Setup server data
+    server_data.client_count = 0;
+    server_data.max_clients = config->max_clients;
+    server_data.sockets = sockets;
+
+    return sockets;
+}
+
+socket_descriptor
+setup_passive_socket(struct sockaddr* sockaddr_ptr, size_t sockaddr_size) {
     errno = 0;
 
-    struct addrinfo addr_config;
-    memset(&addr_config, '\0', sizeof(addr_config));
-    addr_config.ai_family = config->version == IPV4 ? AF_INET : AF_INET6;
-    addr_config.ai_flags = AI_PASSIVE;
-    addr_config.ai_protocol = IPPROTO_TCP;
-    addr_config.ai_socktype = SOCK_STREAM;
+    socket_descriptor socket_fd = socket(sockaddr_ptr->sa_family, SOCK_STREAM, IPPROTO_TCP);
 
-    struct addrinfo* addr_list;
-
-    char port_str[MAX_PORT_STR_LEN];
-    if (port_itoa(config->port, port_str) == NULL) {
-        log_error("Could not parse port number");
-
+    if (socket_fd == NO_SOCKET) {
+        char addr_buffer[ADDR_STR_MAX_SIZE];
+        log_error("Could not create socket on %s: %s",
+                print_address(sockaddr_ptr, addr_buffer),
+                strerror(errno));
         return NO_SOCKET;
     }
 
-    if (getaddrinfo(NULL, port_str, &addr_config, &addr_list) != 0) {
-        log_error("Could not parse server config: %s", strerror(errno));
-
-        freeaddrinfo(addr_list);
-        return NO_SOCKET;
-    }
-    if (addr_list == NULL) {
-        log_error("Could not get address for server: %s", strerror(errno));
-
-        freeaddrinfo(addr_list);
-        return NO_SOCKET;
-    }
-
-    socket_descriptor server_socket = socket(addr_list->ai_family, addr_list->ai_socktype, addr_list->ai_protocol);
-
-    if (server_socket == NO_SOCKET) {
-        char addr_buffer[200];
-        log_error("Could not create socket on %s: %s", print_address_info(addr_list, addr_buffer), strerror(errno));
-
-        freeaddrinfo(addr_list);
-        return NO_SOCKET;
-    }
-
-    // set master socket to allow multiple connections , this is just a good habit, it will work without this
     int reuseaddr_option_value = true;
     if (
         setsockopt(
-            server_socket,
+            socket_fd,
             SOL_SOCKET,
             SO_REUSEADDR,
             (char*)&reuseaddr_option_value,
             sizeof(reuseaddr_option_value)) < 0) {
         log_error("Could not configure socket: %s", strerror(errno));
 
-        freeaddrinfo(addr_list);
-        close(server_socket);
+        close(socket_fd);
         return NO_SOCKET;
     }
 
-    if (bind(server_socket, addr_list->ai_addr, addr_list->ai_addrlen) != 0) {
-        log_error("Could not bind socket: %s", strerror(errno));
+    if (bind(socket_fd, sockaddr_ptr, sockaddr_size) != 0) {
+        char addr_str[ADDR_STR_MAX_SIZE];
+        log_error("Could not bind socket to %s: %s", print_address(sockaddr_ptr, addr_str), strerror(errno));
 
-        freeaddrinfo(addr_list);
-        close(server_socket);
+        close(socket_fd);
         return NO_SOCKET;
     }
 
-    server_data.client_count = 0;
-    server_data.max_clients = config->max_clients;
-    server_data.fd = server_socket;
-    freeaddrinfo(addr_list);
-    return server_socket;
+    return socket_fd;
 }
 
 socket_descriptor
@@ -630,7 +694,7 @@ bool add_new_client(socket_descriptor client, fd_selector selector) {
     return false;
 }
 
-void server_handle_read(struct selector_key* key) {
+void socks5_server_handle_read(struct selector_key* key) {
     struct server_data* data = key->data;
     socket_descriptor server_socket = key->fd;
     fd_selector selector = key->s;
@@ -643,11 +707,11 @@ void server_handle_read(struct selector_key* key) {
         socket_descriptor new_client = accept_new_connection(server_socket);
 
         if (new_client > 0) {
-            // log new client. Write message into buffer to write when file is ready
-            if (add_new_client_log(new_client)) {
-                log_error("Could not generate new client log");
-                return;
-            }
+            // // log new client. Write message into buffer to write when file is ready
+            // if (add_new_client_log(new_client)) {
+            //     log_error("Could not generate new client log");
+            //     return;
+            // }
             // add new client to array
             if (add_new_client(new_client, selector)) {
                 log_error("Could not register client");
@@ -923,4 +987,32 @@ socket_descriptor try_connect(struct addrinfo* origin) {
     }
 
     return new_client_socket;
+}
+
+bool start_listening(socket_descriptor socket, int max_connections) {
+    if (listen(socket, max_connections) != 0) {
+        char addr_str[ADDR_STR_MAX_SIZE];
+        log_error("Could not listen on %s: %s", print_address_from_descriptor(socket, addr_str), strerror(errno));
+
+        return true;
+    }
+
+    if (selector_fd_set_nio(socket) == -1) {
+        log_error("Could not handle server socket flags: %s", strerror(errno));
+
+        return true;
+    }
+
+    return false;
+}
+
+void close_sockets(struct server_sockets sockets) {
+    if (sockets.socks5.ipv4_fd >= 0)
+        close(sockets.socks5.ipv4_fd);
+    if (sockets.socks5.ipv6_fd >= 0)
+        close(sockets.socks5.ipv4_fd);
+    if (sockets.admin.ipv4_fd >= 0)
+        close(sockets.socks5.ipv4_fd);
+    if (sockets.admin.ipv6_fd >= 0)
+        close(sockets.socks5.ipv4_fd);
 }

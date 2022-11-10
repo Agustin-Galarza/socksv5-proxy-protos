@@ -8,6 +8,10 @@
 
 #define MAX_PORT_STR_LEN 6
 
+#define NO_SOCKET -1
+
+typedef int socket_descriptor;
+
 #define SOCKADDR_TO_HUMAN_MIN (INET6_ADDRSTRLEN + 5 + 1)
 /**
  * Describe de forma humana un sockaddr:
