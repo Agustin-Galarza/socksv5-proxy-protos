@@ -53,4 +53,10 @@ struct sockaddr get_socket_addr(int socket_descriptor);
  */
 char* port_itoa(uint16_t port, char portstr[MAX_PORT_STR_LEN]);
 
+/**
+ * Returns true if the given status after connect on a non blocking socket means
+ * that the connection cannot be completed immediately
+ */
+bool connection_in_proggress(int connect_status);
+
 #endif

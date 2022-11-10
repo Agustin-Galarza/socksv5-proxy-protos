@@ -59,6 +59,7 @@ print_address(struct sockaddr* address, char* addr_str) {
         strcpy(addr_str, "[unknown type]"); // Unhandled type
         return addr_str;
     }
+
     // Convert binary to printable address
     if (inet_ntop(address->sa_family, numericAddress, addr_str, INET6_ADDRSTRLEN) == NULL)
         strcpy(addr_str, "[invalid address]");
@@ -70,8 +71,11 @@ print_address(struct sockaddr* address, char* addr_str) {
 }
 
 char* print_address_from_descriptor(int socket_descriptor, char* addr_str) {
-    struct sockaddr addr = get_socket_addr(socket_descriptor);
-    return print_address(&addr, addr_str);
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    struct sockaddr* sock_addr_ptr = (struct sockaddr*)&addr;
+    getpeername(socket_descriptor, sock_addr_ptr, &addr_len);
+    return print_address((struct sockaddr*)&addr, addr_str);
 }
 
 char* get_datetime_string(char* datetime_str) {

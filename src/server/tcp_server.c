@@ -103,7 +103,8 @@ struct client_data
      * Solo tiene contenido si el cliente se encuentra en el estado
      * RESOLVE_ADDRESS
      */
-    struct addrinfo* resolved_addresses;
+    struct addrinfo* resolved_addresses_list;
+    struct addrinfo* current_connection_trial;
     // struct sockaddr* origin_address;
     // socklen_t origin_address_len;
     fd_selector selector;
@@ -176,23 +177,23 @@ bool add_disconnected_client_log(struct client_data* client);
 
 bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer);
 
-bool close_connection(struct client_data* client);
+bool socks5_close_connection(struct client_data* client);
 
 struct client_data*
-    generate_new_client_data(socket_descriptor client, fd_selector selector);
+    socks5_generate_new_client_data(socket_descriptor client, fd_selector selector);
 
-void free_client_data(struct client_data* data);
+void socks5_free_client_data(struct client_data* data);
 
-bool add_new_client(socket_descriptor client, fd_selector selector);
+bool socks5_add_new_client(socket_descriptor client, fd_selector selector);
 
 /**
  *  Revisa la intención de conexión indicada por el cliente en el campo
  * origin_address_repr y resuelve su dirección IP para luego poder conectarse.
  * Deja en el cliente la lista de posibles direcciones
  */
-void* resolve_origin_address(void* client_data);
+void* socks5_resolve_origin_address(void* client_data);
 
-socket_descriptor try_connect(struct addrinfo* origin);
+socket_descriptor socks5_try_connect(struct client_data* client);
 
 // Event Handlers
 
@@ -200,21 +201,23 @@ void socks5_server_handle_read(struct selector_key* key);
 
 void handle_file_write(struct selector_key* key);
 
-void client_handle_read(struct selector_key* key);
+void socks5_client_handle_read(struct selector_key* key);
 
-void client_handle_write(struct selector_key* key);
+void socks5_client_handle_write(struct selector_key* key);
 
-void connect_client(struct selector_key* key);
+void socks5_connect_client(struct selector_key* key);
+
 int free_addrinfo_on_error(struct addrinfo* addrinfo, char* message);
 
+void admin_server_handle_read(struct selector_key* key);
 
 void client_handle_close(struct selector_key* key);
 
 static const struct fd_handler
-client_handlers = {
-    .handle_read = client_handle_read,
-    .handle_write = client_handle_write,
-    .handle_block = connect_client,
+socks5_client_handlers = {
+    .handle_read = socks5_client_handle_read,
+    .handle_write = socks5_client_handle_write,
+    .handle_block = socks5_connect_client,
     .handle_close = client_handle_close,
 };
 
@@ -227,18 +230,18 @@ socks5_server_handlers = {
 
 static const struct fd_handler
 admin_server_handlers = {
-        .handle_read = socks5_server_handle_read,
+        .handle_read = admin_server_handle_read,
         .handle_write = NULL,
         .handle_close = NULL,
 };
 
-static const struct fd_handler
-logs_file_handlers = {
-        .handle_read = NULL,
-        .handle_write = handle_file_write,
-        .handle_close = NULL,
-        .handle_block = NULL,
-};
+// static const struct fd_handler
+// logs_file_handlers = {
+//         .handle_read = NULL,
+//         .handle_write = handle_file_write,
+//         .handle_close = NULL,
+//         .handle_block = NULL,
+// };
 
 /**********************************************
 |          Function Implementations          |
@@ -369,7 +372,15 @@ bool run_server(struct server_config* config) {
 
     selector_status status = selector_register(selector, sockets.socks5.ipv4_fd, &socks5_server_handlers, OP_READ, &server_data);
     if (status != SELECTOR_SUCCESS) {
-        log_error("Could not register server socket");
+        log_error("Could not register socks5 IPv4 socket");
+
+        error = true;
+        goto end;
+    }
+
+    status = selector_register(selector, sockets.socks5.ipv6_fd, &socks5_server_handlers, OP_READ, &server_data);
+    if (status != SELECTOR_SUCCESS) {
+        log_error("Could not register socks5 IPv6 socket");
 
         error = true;
         goto end;
@@ -528,7 +539,7 @@ accept_new_connection(socket_descriptor server_socket) {
         return -1;
     }
     char addr_buf[ADDR_STR_MAX_SIZE];
-    log_info("New connection to %s", print_address((struct sockaddr*)&client_addr, addr_buf));
+    log_info("New connection from %s", print_address((struct sockaddr*)&client_addr, addr_buf));
 
     return new_connection;
 }
@@ -600,7 +611,7 @@ void handle_sig_kill(int signum) {
     server_active = false;
 }
 
-struct client_data* generate_new_client_data(socket_descriptor client, fd_selector selector) {
+struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd_selector selector) {
     struct client_data* data = malloc(sizeof(struct client_data));
 
     data->read_buffer = malloc(sizeof(struct buffer));
@@ -619,7 +630,8 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
 
     data->references = 1;
 
-    data->resolved_addresses = NULL;
+    data->resolved_addresses_list = NULL;
+    data->current_connection_trial = NULL;
 
     data->parser = client_parser_init();
 
@@ -632,7 +644,7 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
     return data;
 }
 
-void free_client_data(struct client_data* data) {
+void socks5_free_client_data(struct client_data* data) {
     if (data == NULL || data->references-- > 1)
         return;
 
@@ -664,14 +676,14 @@ void free_client_data(struct client_data* data) {
     free(data);
 }
 
-bool add_new_client(socket_descriptor client, fd_selector selector) {
+bool socks5_add_new_client(socket_descriptor client, fd_selector selector) {
     // TODO: manage states: we should only want to read from a client after it's connected. Then we'll handle reads and writes as every connection changes states.
     // At first we have to resolve the origin address, meanwhile the new client stays idle
-    struct client_data* data = generate_new_client_data(client, selector);
+    struct client_data* data = socks5_generate_new_client_data(client, selector);
 
     clients[server_data.client_count] = data;
 
-    if (selector_register(selector, client, &client_handlers, OP_NOOP, data)) {
+    if (selector_register(selector, client, &socks5_client_handlers, OP_NOOP, data)) {
         return true;
     }
     server_data.client_count++;
@@ -689,7 +701,7 @@ bool add_new_client(socket_descriptor client, fd_selector selector) {
 
 
     pthread_t tid;
-    pthread_create(&tid, NULL, resolve_origin_address, (void*)data);
+    pthread_create(&tid, NULL, socks5_resolve_origin_address, (void*)data);
 
     return false;
 }
@@ -713,7 +725,7 @@ void socks5_server_handle_read(struct selector_key* key) {
             //     return;
             // }
             // add new client to array
-            if (add_new_client(new_client, selector)) {
+            if (socks5_add_new_client(new_client, selector)) {
                 log_error("Could not register client");
                 return;
             }
@@ -742,7 +754,7 @@ static void get_targets(socket_descriptor source_descriptor,
     }
 }
 
-void client_handle_read(struct selector_key* key) {
+void socks5_client_handle_read(struct selector_key* key) {
     fd_selector selector = key->s;
     socket_descriptor source_descriptor = key->fd;
     struct client_data* data = key->data;
@@ -759,59 +771,22 @@ void client_handle_read(struct selector_key* key) {
     uint8_t* source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
 
     int ammount_read = read(source_descriptor, source_buff_raw, max_write);
+    char addr_str[ADDR_STR_MAX_SIZE];
     switch (ammount_read) {
     case -1:
-        log_error("Could not read from client %s: %s", data->client_str, strerror(errno));
-        return;
+        log_error("Could not read from client %s(%s): %s", data->client_str, print_address_from_descriptor(source_descriptor, addr_str), strerror(errno));
     case 0:
-        if (close_connection(data))
+        if (socks5_close_connection(data))
             return;
         break;
     default:
         buffer_write_adv(source_buffer, ammount_read);
-        source_buff_raw[ammount_read] = '\0';
-
-        //TODO: el parseo tendría que ser únicamente del cliente al origen 
-        enum parsing_status parser_status;
-        // if parser status is WAITING, start parsing -> change status to PARSING
-        if (client_parser_get_status(data->parser) == CLNT_PARSER_WAITING) {
-            parser_status = start_parsing(data->parser, (char*)source_buff_raw, ammount_read);
-        }
-        else {
-            // parse msg
-            parser_status = keep_parsing(data->parser, ammount_read);
-        }
-        buffer_reset(source_buffer);
-
-        // if error -> handle
-        if (parser_status == CLNT_PARSER_ERROR) {
-            log_error("Could not parse message from client %s: %s",
-                        data->client_str,
-                        client_parser_error_str(data->parser));
-            client_parser_reset(data->parser);
-            return;
-        }
-        if (parser_status == CLNT_PARSER_DONE) {
-            // if done log msg and add write to interests
-            // print_address_from_descriptor(source_descriptor, addr_str);
-            struct parsed_msg* msg = get_parsed_msg(data->parser);
-            log_info("New message from %s: %s", msg->username, msg->msg);
-
-            // write parsed msg into buffer
-            // buffer_reset(source_buffer);
-            source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
-            strncpy((char*)source_buff_raw, msg->msg, max_write);
-            buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));
-            client_parser_reset(data->parser);
-
-            selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
-        }
-        // if not done, keep reading and parsing
+        selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
         break;
     }
 }
 
-void client_handle_write(struct selector_key* key) {
+void socks5_client_handle_write(struct selector_key* key) {
     fd_selector selector = key->s;
     socket_descriptor target_descriptor = key->fd;
     struct client_data* data = key->data;
@@ -821,16 +796,22 @@ void client_handle_write(struct selector_key* key) {
     // TODO: check if write was completed
     write_to_client(target_descriptor, target_buffer);
 
-    selector_set_interest(selector, target_descriptor, OP_READ);
+    if (data->state == CONNECTING) {
+        selector_set_interest(selector, data->client, OP_READ);
+        selector_set_interest(selector, data->origin, OP_NOOP);
+    }
+    else {
+        selector_set_interest(selector, target_descriptor, OP_READ);
+    }
 }
 
-bool close_connection(struct client_data* client) {
+bool socks5_close_connection(struct client_data* client) {
     fd_selector selector = client->selector;
     socket_descriptor client_descriptor = client->client;
     socket_descriptor origin_descriptor = client->origin;
 
-    log_info("Closing connection to %s", client->client_str);
-    add_disconnected_client_log(client);
+    log_info("Closing connection of client %s", client->client_str);
+    // add_disconnected_client_log(client);
 
     selector_status status;
     if ((status = selector_unregister_fd(selector, client_descriptor)) != SELECTOR_SUCCESS) {
@@ -846,7 +827,7 @@ bool close_connection(struct client_data* client) {
 }
 
 void client_handle_close(struct selector_key* key) {
-    free_client_data((struct client_data*)key->data);
+    socks5_free_client_data((struct client_data*)key->data);
     close(key->fd);
     server_data.client_count--;
 }
@@ -855,7 +836,7 @@ void client_handle_close(struct selector_key* key) {
 
 
 
-void* resolve_origin_address(void* client_data) {
+void* socks5_resolve_origin_address(void* client_data) {
     struct client_data* data = client_data;
     struct address_representation* addr_repr = data->origin_address_repr;
     char* addr_name = addr_repr->hostname;
@@ -896,7 +877,7 @@ void* resolve_origin_address(void* client_data) {
         return NULL;
     }
 
-    data->resolved_addresses = addr_list;
+    data->resolved_addresses_list = addr_list;
 
     data->state = CONNECTING;
 
@@ -906,9 +887,9 @@ void* resolve_origin_address(void* client_data) {
     return NULL;
 }
 
-void connect_client(struct selector_key* key) {
+void socks5_connect_client(struct selector_key* key) {
     struct client_data* data = key->data;
-    struct addrinfo* addr_list = data->resolved_addresses;
+    struct addrinfo* addr_list = data->resolved_addresses_list;
 
     if (addr_list == NULL) {
         log_error("Client does not have a list of resolved addresses");
@@ -916,42 +897,44 @@ void connect_client(struct selector_key* key) {
     }
 
     char origin_addr_buff[ADDR_STR_MAX_SIZE];
-    log_info("Connecting client %s to address %s",
-            data->client_str,
-            print_address_info(addr_list, origin_addr_buff));
-    write_server_log("Connecting client %s to address %s",
-            data->client_str,
-            print_address_info(addr_list, origin_addr_buff));
+    // write_server_log("Connecting client %s to address %s",
+    //         data->client_str,
+    //         print_address_info(addr_list, origin_addr_buff));
 
-    socket_descriptor origin = NO_SOCKET;
+    socket_descriptor origin_local_socket = NO_SOCKET;
     for (;addr_list != NULL; addr_list = addr_list->ai_next) {
-        origin = try_connect(addr_list);
-        if (origin != NO_SOCKET) break;
+        data->current_connection_trial = addr_list;
+        origin_local_socket = socks5_try_connect(data);
+        if (origin_local_socket != NO_SOCKET) break;
     }
 
-    if (origin == NO_SOCKET) {
-        log_error("Could not resolve origin address %s", origin_addr_buff);
-        freeaddrinfo(data->resolved_addresses);
+    if (origin_local_socket == NO_SOCKET) {
+        log_error("Could not resolve origin address %s", print_address_info(addr_list, origin_addr_buff));
+        data->current_connection_trial = NULL;
+        freeaddrinfo(data->resolved_addresses_list);
 
         return;
     }
 
-    data->origin = origin;
-    freeaddrinfo(data->resolved_addresses);
-    data->resolved_addresses = NULL;
-
-    data->state = COPY;
+    data->origin = origin_local_socket;
+    data->current_connection_trial = NULL;
+    freeaddrinfo(data->resolved_addresses_list);
+    data->resolved_addresses_list = NULL;
 
     fd_selector selector = key->s;
     socket_descriptor client_fd = key->fd;
 
-    selector_set_interest(selector, client_fd, OP_READ);
-
     // Add origin
     data->references++;
     clients[server_data.client_count++] = data;
-    selector_register(selector, origin, &client_handlers, OP_READ, data);
+    selector_register(selector, origin_local_socket, &socks5_client_handlers, OP_NOOP, data);
 
+    if (data->state == COPY) {
+        selector_set_interest(selector, client_fd, OP_READ);
+    }
+    else {
+        selector_set_interest(selector, origin_local_socket, OP_WRITE);
+    }
 }
 
 int free_addrinfo_on_error(struct addrinfo* addrinfo, char* message) {
@@ -961,12 +944,10 @@ int free_addrinfo_on_error(struct addrinfo* addrinfo, char* message) {
     return true;
 }
 
-//TODO: utils
-bool connection_in_proggress(int connect_status) {
-    return connect_status == EINPROGRESS || connect_status == EAGAIN;
-}
+socket_descriptor socks5_try_connect(struct client_data* client) {
+    if (client->current_connection_trial == NULL) return NO_SOCKET;
 
-socket_descriptor try_connect(struct addrinfo* origin) {
+    struct addrinfo* origin = client->current_connection_trial;
     // crear el socket
     socket_descriptor new_client_socket = socket(origin->ai_family, origin->ai_socktype, origin->ai_protocol);
     if (new_client_socket == NO_SOCKET) {
@@ -980,10 +961,26 @@ socket_descriptor try_connect(struct addrinfo* origin) {
     };
 
     // connect
-    if ((connect(new_client_socket, origin->ai_addr, origin->ai_addrlen) == NO_SOCKET) && !connection_in_proggress(errno)) {
+    int connection_status;
+    if ((connect(new_client_socket, origin->ai_addr, origin->ai_addrlen) == -1) && !connection_in_proggress(errno)) {
         log_error("Error code: %d", errno);
         free_addrinfo_on_error(origin, "Could not connect to origin");
         return NO_SOCKET;
+    }
+    connection_status = errno;
+
+    char local_addr_buff[ADDR_STR_MAX_SIZE];
+    char origin_addr_buff[ADDR_STR_MAX_SIZE];
+
+    print_address_from_descriptor(new_client_socket, local_addr_buff);
+    print_address_info(client->current_connection_trial, origin_addr_buff);
+    if (connection_in_proggress(connection_status)) {
+        log_debug("Starting connection to %s from %s", origin_addr_buff, local_addr_buff);
+        client->state = CONNECTING;
+    }
+    else {
+        log_debug("Connected to %s", origin_addr_buff);
+        client->state = COPY;
     }
 
     return new_client_socket;
@@ -1015,4 +1012,8 @@ void close_sockets(struct server_sockets sockets) {
         close(sockets.socks5.ipv4_fd);
     if (sockets.admin.ipv6_fd >= 0)
         close(sockets.socks5.ipv4_fd);
+}
+
+void admin_server_handle_read(struct selector_key* key) {
+    log_error("admin_server_handle_read: Not implemented");
 }
