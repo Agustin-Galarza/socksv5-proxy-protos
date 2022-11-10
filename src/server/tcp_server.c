@@ -620,7 +620,36 @@ bool add_new_client(socket_descriptor client, fd_selector selector) {
     }
     server_data.client_count++;
 
-    return read_new_request_from_client(data);
+    // Leo el primer mensaje del cliente 
+    // TODO: Por ahora es bloqueante!
+
+    int bytes_read = read(client, data->write_buffer->data, CLIENT_BUFFER_SIZE);
+    if (bytes_read == -1) {
+        log_error("Error while reading from client");
+        return true;
+    }
+    buffer_write_adv(data->write_buffer, bytes_read);
+
+    // Leo del cliente y parseo el mensaje de negociacion
+    // Si el mensaje es invalido, cierro la conexion
+    // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
+    log_debug("Starting negociation with client %s", data->client_str);
+    data->state = NEGOCIATING;
+    int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
+
+    if (negociation_parser_result == PARSER_FINISH_OK)
+        return read_new_request_from_client(data);
+
+    if (negociation_parser_result == PARSER_FINISH_ERROR) {
+        log_error("Could not negociate with client %s", data->client_str);
+        close_connection(data);
+        return true;
+    }
+
+    if (negociation_parser_result == PARSER_NOT_FINISH) {
+        log_debug("Negociation with client %s not finished", data->client_str);
+        return true;
+    }
 }
 
 bool read_new_request_from_client(struct client_data* data) {
@@ -704,6 +733,7 @@ void client_handle_read(struct selector_key* key) {
     uint8_t* source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
 
     int ammount_read = read(source_descriptor, source_buff_raw, max_write);
+    log_debug("Read %d bytes from client %s", ammount_read, data->client_str);
     switch (ammount_read) {
     case -1:
         log_error("Could not read from client %s: %s", data->client_str, strerror(errno));
@@ -713,27 +743,27 @@ void client_handle_read(struct selector_key* key) {
             return;
         break;
     default:
-        buffer_write_adv(source_buffer, ammount_read);
+        // buffer_write_adv(source_buffer, ammount_read);
 
-        // Leo del cliente y parseo el mensaje de negociacion
-        // Si el mensaje es invalido, cierro la conexion
-        // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
-        log_debug("Starting negociation with client %s", data->client_str);
-        data->state = NEGOCIATING;
-        int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
+        // // Leo del cliente y parseo el mensaje de negociacion
+        // // Si el mensaje es invalido, cierro la conexion
+        // // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
+        // log_debug("Starting negociation with client %s", data->client_str);
+        // data->state = NEGOCIATING;
+        // int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
 
-        if (negociation_parser_result == PARSER_FINISH_OK)
-            selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+        // if (negociation_parser_result == PARSER_FINISH_OK)
+        //     selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
 
-        if (negociation_parser_result == PARSER_FINISH_ERROR) {
-            log_error("Could not negociate with client %s", data->client_str);
-            close_connection(data);
-            return;
-        }
+        // if (negociation_parser_result == PARSER_FINISH_ERROR) {
+        //     log_error("Could not negociate with client %s", data->client_str);
+        //     close_connection(data);
+        //     return;
+        // }
 
-        if (negociation_parser_result == PARSER_NOT_FINISH) {
-            log_debug("Negociation with client %s not finished", data->client_str);
-        }
+        // if (negociation_parser_result == PARSER_NOT_FINISH) {
+        //     log_debug("Negociation with client %s not finished", data->client_str);
+        // }
 
         // source_buff_raw[ammount_read] = '\0';
 

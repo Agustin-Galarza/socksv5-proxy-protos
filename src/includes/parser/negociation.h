@@ -11,9 +11,14 @@
 #define NO_ACCEPTABLE_METHODS 0xFF
 #define VERSION 0x05
 
-#define PARSER_FINISH_OK 1
-#define PARSER_FINISH_ERROR 0
-#define PARSER_NOT_FINISH 2
+
+// Estados finales de la negociacion
+enum negociation_results {
+    PARSER_FINISH_ERROR = 0,
+    PARSER_FINISH_OK,
+    PARSER_NOT_FINISH
+};
+
 
 // Estados de la negociación
 enum negociation_state {
@@ -43,13 +48,13 @@ void negociation_parser_free(struct negociation_parser* parser);
 enum negociation_state negociation_parser_feed(struct negociation_parser* parser, uint8_t byte);
 
 // Checkea si llego al estado final
-int negociation_parser_is_finished(struct negociation_parser* parser);
+enum negociation_results negociation_parser_is_finished(struct negociation_parser* parser);
 
 // Ckeckea si hay error
 int negociation_parser_has_error(struct negociation_parser* parser);
 
 // Consumo buffer. Retorna 0 si hubo error, 1 si termino la negociación y 2 si no termino
-int negociation_parser_consume(buffer* buff, struct negociation_parser* parser);
+enum negociation_results negociation_parser_consume(buffer* buff, struct negociation_parser* parser);
 
 // Reset parser
 void negociation_parser_reset(struct negociation_parser* parser);

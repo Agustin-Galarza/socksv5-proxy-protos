@@ -39,20 +39,18 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
         log_debug("Cantidad de metodos correcta");
         break;
     case NEGOCIATION_METHODS:
-        while (parser->nmethods > 0) {
-            if (byte == NO_AUTENTICATION || byte == USERNAME_PASSWORD) {
-                parser->methods[parser->nmethods - 1] = byte;
-                parser->nmethods--;
-                log_debug("Metodo correcto");
-            }
-            else {
-                parser->state = NEGOCIATION_ERROR;
-                log_debug("Metodo incorrecto");
-            }
+        if (byte == NO_AUTENTICATION || byte == USERNAME_PASSWORD) {
+            parser->methods[parser->nmethods - 1] = byte;
+            parser->nmethods--;
+            log_debug("Metodo correcto: %d", byte);
         }
-
-        parser->state = NEGOCIATION_DONE;
-        log_debug("Metodo correcto");
+        else {
+            parser->state = NEGOCIATION_ERROR;
+            log_debug("Metodo incorrecto");
+        }
+        if (parser->nmethods == 0) {
+            parser->state = NEGOCIATION_DONE;
+        }
 
         break;
     case NEGOCIATION_DONE:
@@ -65,7 +63,7 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
     return parser->state;
 }
 
-int negociation_parser_is_finished(struct negociation_parser* parser) {
+enum negociation_results negociation_parser_is_finished(struct negociation_parser* parser) {
     return parser->state == NEGOCIATION_DONE ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
 }
 
@@ -73,14 +71,15 @@ int negociation_parser_has_error(struct negociation_parser* parser) {
     return parser->state == NEGOCIATION_ERROR;
 }
 
-int negociation_parser_consume(buffer* buff, struct negociation_parser* parser) {
+enum negociation_results negociation_parser_consume(buffer* buff, struct negociation_parser* parser) {
     while (buffer_can_read(buff)) {
+        log_debug("Estado: %d", parser->state);
         uint8_t byte = buffer_read(buff);
         negociation_paser_feed(parser, byte);
         if (negociation_parser_has_error(parser)) {
             return PARSER_FINISH_ERROR;
         }
-        if (negociation_parser_is_finished(parser)) {
+        if (negociation_parser_is_finished(parser) == PARSER_FINISH_OK) {
             break;
         }
     }
