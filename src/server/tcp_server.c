@@ -779,7 +779,7 @@ void socks5_client_handle_read(struct selector_key* key) {
 
     int ammount_read = read(source_descriptor, source_buff_raw, max_write);
     char addr_str[ADDR_STR_MAX_SIZE];
-    log_debug("Read %d bytes from client %s", ammount_read, data->client_str);
+    log_debug("Read %d bytes from client %s(%s)", ammount_read, data->client_str, print_address_from_descriptor(source_descriptor, addr_str));
 
     switch (ammount_read) {
     case -1:
@@ -809,14 +809,11 @@ void socks5_client_handle_write(struct selector_key* key) {
     write_to_client(target_descriptor, target_buffer);
 
     if (data->state == CONNECTING) {
-        bool connected = false;
-        socklen_t flag_size = sizeof(connected);
-        if (getsockopt(data->origin, SOL_SOCKET, SO_ERROR, &connected, &flag_size)) {
-            log_error("Could not check connection status: %s", strerror(errno));
+        struct sockaddr_storage addr;
+        socklen_t addr_len = sizeof(addr);
 
-            socks5_close_connection(data);
-            return;
-        }
+        bool connected = getpeername(data->origin, (struct sockaddr*)&addr, &addr_len) == 0;
+
         if (!connected) {
             char addr_str[ADDR_STR_MAX_SIZE];
             log_info("Could not connect to %s", print_address_from_repr(data->origin_address_repr, addr_str));
