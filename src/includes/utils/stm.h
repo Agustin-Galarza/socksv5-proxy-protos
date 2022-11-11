@@ -60,7 +60,7 @@ struct state_definition
     unsigned (*on_block_ready)(struct selector_key* key);
 };
 
-/** inicializa el la máquina */
+/** inicializa la máquina */
 void stm_init(struct state_machine* stm);
 /** obtiene el identificador del estado actual */
 unsigned
