@@ -103,10 +103,10 @@ error:
 }
 
 struct sockaddr get_socket_addr(int socket_descriptor) {
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-    struct sockaddr* sock_addr_ptr = (struct sockaddr*)&client_addr;
-    getpeername(socket_descriptor, sock_addr_ptr, &client_addr_len);
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    struct sockaddr* sock_addr_ptr = (struct sockaddr*)&addr;
+    getpeername(socket_descriptor, sock_addr_ptr, &addr_len);
     return *sock_addr_ptr;
 }
 
@@ -119,4 +119,8 @@ char* port_itoa(uint16_t port, char portstr[MAX_PORT_STR_LEN]) {
 error:
     portstr[0] = '\0';
     return NULL;
+}
+
+bool connection_in_proggress(int connect_status) {
+    return connect_status == EINPROGRESS || connect_status == EAGAIN;
 }

@@ -13,10 +13,10 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 ASAN_FLAGS := -fsanitize=address -fsanitize=undefined -fno-asynchronous-unwind-tables -fno-omit-frame-pointer
 ASAN_LDFLAGS := -fsanitize=address -fsanitize=undefined
 
-GNU_FLAGS := -D_GNU_SOURCE  -D_POSIX_C_SOURCE=200112L
+GNU_FLAGS := -D_POSIX_C_SOURCE=200809L
 
-CFLAGS := -std=c11 -g -Wall -Wextra -pedantic -pedantic-errors  -O3 -fno-exceptions -pthread  -Wno-unused-parameter -Wno-implicit-fallthrough 
-
+CFLAGS := -std=c11 -g -Wall -Wextra -pedantic -pedantic-errors -fno-exceptions -pthread  -Wno-unused-parameter -Wno-implicit-fallthrough 
+# CFLAGS += -O3 # optimize (remove for debugging)
 CFLAGS += $(ASAN_FLAGS)
 CFLAGS += $(GNU_FLAGS)
 

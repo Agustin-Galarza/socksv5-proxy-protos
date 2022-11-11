@@ -12,6 +12,10 @@
 
 #define MAX_PORT_STR_LEN 6
 
+#define NO_SOCKET -1
+
+typedef int socket_descriptor;
+
 #define SOCKADDR_TO_HUMAN_MIN (INET6_ADDRSTRLEN + 5 + 1)
 /**
  * Describe de forma humana un sockaddr:
@@ -52,5 +56,11 @@ struct sockaddr get_socket_addr(int socket_descriptor);
  * En caso de error deja portstr como string vacío y retorna NULL
  */
 char* port_itoa(uint16_t port, char portstr[MAX_PORT_STR_LEN]);
+
+/**
+ * Returns true if the given status after connect on a non blocking socket means
+ * that the connection cannot be completed immediately
+ */
+bool connection_in_proggress(int connect_status);
 
 #endif
