@@ -1,6 +1,6 @@
 /**
  * TODO:
- *  manejar errores del selector || revisar flujo para ver si se manejan bien todos los errores
+ *  pasar a usar la máquina de estados
  */
 #include <stdlib.h>
 #include <errno.h>
@@ -111,7 +111,6 @@ struct client_data
     // socklen_t origin_address_len;
     fd_selector selector;
 
-    client_parser* parser;
     struct negociation_parser* negociation_parser;
 
     /**
@@ -525,41 +524,6 @@ accept_new_connection(socket_descriptor server_socket) {
     return new_connection;
 }
 
-bool add_new_client_log(socket_descriptor client) {
-    char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
-    char addr_buff[ADDR_STR_MAX_SIZE];
-
-
-    get_datetime_string(time_fmt_str);
-    if (time_fmt_str[0] == '\0') {
-        log_error("Error while trying to generate datetime string");
-        return true;
-    }
-
-    print_address_from_descriptor(client, addr_buff);
-    if (write_server_log("New connection from %s on %s\n", addr_buff, time_fmt_str)) {
-        return true;
-    }
-
-    return false;
-}
-
-bool add_disconnected_client_log(struct client_data* client) {
-    char time_fmt_str[TIME_FMT_STR_MAX_SIZE];
-
-    get_datetime_string(time_fmt_str);
-    if (time_fmt_str[0] == '\0') {
-        log_error("Error while trying to generate datetime string");
-        return true;
-    }
-
-    if (write_server_log("Client %s disconnected on %s\n", client->client_str, time_fmt_str)) {
-        return true;
-    }
-
-    return false;
-}
-
 bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer) {
     if (!buffer_can_read(client_buffer)) return false;
     size_t max_read = 0;
@@ -618,15 +582,11 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
     data->resolved_addresses_list = NULL;
     data->current_connection_trial = NULL;
 
-    data->parser = client_parser_init();
 
     data->negociation_parser = negociation_parser_init();
 
     data->client_str = malloc(ADDR_STR_MAX_SIZE);
     print_address_from_descriptor(data->client, data->client_str);
-    // data->origin_address = NULL;
-    // data->origin_address_repr = NULL;
-    // data->origin_address_len = 0;
 
     return data;
 }
@@ -646,7 +606,6 @@ void socks5_free_client_data(struct client_data* data) {
     if (data->client_str != NULL) {
         free(data->client_str);
     }
-    client_parser_free(data->parser);
     negociation_parser_free(data->negociation_parser);
     // if (data->origin_address != NULL)
     //     free(data->origin_address);
@@ -821,7 +780,7 @@ void socks5_client_handle_write(struct selector_key* key) {
             socks5_close_connection(data);
             return;
         }
-        log_debug("Connection finnished to %s", print_address_from_descriptor(data->origin, addr_str));
+        log_debug("Connected to %s", print_address_from_descriptor(data->origin, addr_str));
         selector_set_interest(selector, data->client, OP_READ);
         selector_set_interest(selector, data->origin, OP_NOOP);
         data->state = COPY;
