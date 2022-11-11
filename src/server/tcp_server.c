@@ -655,7 +655,7 @@ bool socks5_add_new_client(socket_descriptor client, fd_selector selector) {
     // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
     log_debug("Starting negociation with client %s", data->client_str);
     data->state = NEGOCIATING;
-    int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
+    enum negociation_results negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
 
     if (negociation_parser_result == NEGOCIATION_PARSER_FINISH_OK)
         return read_new_request_from_client(data);
@@ -763,7 +763,7 @@ void socks5_client_handle_read(struct selector_key* key) {
             log_debug("Request from client %s finished", data->client_str);
             if (data->origin == -1) {
                 log_debug("Client %s requested address %s", data->client_str, data->request_parser->address);
-                if (resolve_origin_address(data)) {
+                if (socks5_resolve_origin_address(data)) {
                     log_error("Could not resolve origin address");
                     return;
                 }
@@ -784,68 +784,10 @@ void socks5_client_handle_read(struct selector_key* key) {
         }
         else if (request_parser_status == REQUEST_PARSER_FINISH_ERROR) {
             log_error("Could not parse request from client %s", data->client_str);
-            if (close_connection(data))
+            if (socks5_close_connection(data))
                 return;
         }
 
-        // // Leo del cliente y parseo el mensaje de negociacion
-        // // Si el mensaje es invalido, cierro la conexion
-        // // Si el mensaje es valido, lo guardo le guardo al cliente su socket y su selector
-        // log_debug("Starting negociation with client %s", data->client_str);
-        // data->state = NEGOCIATING;
-        // int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
-
-        // if (negociation_parser_result == PARSER_FINISH_OK)
-        //     selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
-
-        // if (negociation_parser_result == PARSER_FINISH_ERROR) {
-        //     log_error("Could not negociate with client %s", data->client_str);
-        //     close_connection(data);
-        //     return;
-        // }
-
-        // if (negociation_parser_result == PARSER_NOT_FINISH) {
-        //     log_debug("Negociation with client %s not finished", data->client_str);
-        // }
-
-        // source_buff_raw[ammount_read] = '\0';
-
-        // //TODO: el parseo tendría que ser únicamente del cliente al origen 
-        // enum parsing_status parser_status;
-        // // if parser status is WAITING, start parsing -> change status to PARSING
-        // if (client_parser_get_status(data->parser) == CLNT_PARSER_WAITING) {
-        //     parser_status = start_parsing(data->parser, (char*)source_buff_raw, ammount_read);
-        // }
-        // else {
-        //     // parse msg
-        //     parser_status = keep_parsing(data->parser, ammount_read);
-        // }
-        // buffer_reset(source_buffer);
-
-        // // if error -> handle
-        // if (parser_status == CLNT_PARSER_ERROR) {
-        //     log_error("Could not parse message from client %s: %s",
-        //         data->client_str,
-        //         client_parser_error_str(data->parser));
-        //     client_parser_reset(data->parser);
-        //     return;
-        // }
-        // if (parser_status == CLNT_PARSER_DONE) {
-        //     // if done log msg and add write to interests
-        //     // print_address_from_descriptor(source_descriptor, addr_str);
-        //     struct parsed_msg* msg = get_parsed_msg(data->parser);
-        //     log_info("New message from %s: %s", msg->username, msg->msg);
-
-        //     // write parsed msg into buffer
-        //     // buffer_reset(source_buffer);
-        //     source_buff_raw = buffer_write_ptr(source_buffer, &max_write);
-        //     strncpy((char*)source_buff_raw, msg->msg, max_write);
-        //     buffer_write_adv(source_buffer, strlen((char*)source_buff_raw));
-        //     client_parser_reset(data->parser);
-
-        //     selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
-        // }
-        // // if not done, keep reading and parsing
         break;
     }
 }
