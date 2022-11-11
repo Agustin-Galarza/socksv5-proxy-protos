@@ -1,4 +1,6 @@
 #include "parser/request.h"
+#include <string.h>
+#include "logger/logger.h"
 
 
 struct request_parser* request_parser_init() {
@@ -129,7 +131,7 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
 }
 
 enum request_results request_parser_is_finished(struct request_parser* parser) {
-    return parser->state == REQUEST_DONE ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
+    return parser->state == REQUEST_DONE ? REQUEST_PARSER_FINISH_OK : REQUEST_PARSER_NOT_FINISH;
 }
 
 enum request_results request_parser_consume(buffer* buff, struct request_parser* parser) {
@@ -137,9 +139,9 @@ enum request_results request_parser_consume(buffer* buff, struct request_parser*
         uint8_t byte = buffer_read(buff);
         request_parser_feed(parser, byte);
         if (request_parser_has_error(parser)) {
-            return PARSER_FINISH_ERROR;
+            return REQUEST_PARSER_FINISH_ERROR;
         }
-        if (request_parser_is_finished(parser) == PARSER_FINISH_OK) {
+        if (request_parser_is_finished(parser) == REQUEST_PARSER_FINISH_OK) {
             break;
         }
     }

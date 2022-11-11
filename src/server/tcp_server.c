@@ -27,6 +27,7 @@
 #include "parser/client_parser.h"
 #include "utils/netutils.h"
 #include "parser/negociation.h"
+#include "parser/request.h"
 
  /*********************************
  |          Definitions          |
@@ -102,6 +103,7 @@ struct client_data
 
     client_parser* parser;
     struct negociation_parser* negociation_parser;
+    struct request_parser* request_parser;
 
     /**
      * Representación legible del cliente para usar en logs y registros:
@@ -570,6 +572,8 @@ struct client_data* generate_new_client_data(socket_descriptor client, fd_select
 
     data->negociation_parser = negociation_parser_init();
 
+    data->request_parser = request_parser_init();
+
     data->client_str = malloc(ADDR_STR_MAX_SIZE);
     print_address_from_descriptor(data->client, data->client_str);
     // data->origin_address = NULL;
@@ -596,6 +600,7 @@ void free_client_data(struct client_data* data) {
     }
     client_parser_free(data->parser);
     negociation_parser_free(data->negociation_parser);
+    request_parser_free(data->request_parser);
     // if (data->origin_address != NULL)
     //     free(data->origin_address);
     // TODO: free origin_address_repr when it is allocated
@@ -641,16 +646,16 @@ bool add_new_client(socket_descriptor client, fd_selector selector) {
     data->state = NEGOCIATING;
     int negociation_parser_result = negociation_parser_consume(data->write_buffer, data->negociation_parser);
 
-    if (negociation_parser_result == PARSER_FINISH_OK)
+    if (negociation_parser_result == NEGOCIATION_PARSER_FINISH_OK)
         return read_new_request_from_client(data);
 
-    if (negociation_parser_result == PARSER_FINISH_ERROR) {
+    if (negociation_parser_result == NEGOCIATION_PARSER_FINISH_ERROR) {
         log_error("Could not negociate with client %s", data->client_str);
         close_connection(data);
         return true;
     }
 
-    if (negociation_parser_result == PARSER_NOT_FINISH) {
+    if (negociation_parser_result == NEGOCIATION_PARSER_NOT_FINISH) {
         log_debug("Negociation with client %s not finished", data->client_str);
         return true;
     }
@@ -747,7 +752,40 @@ void client_handle_read(struct selector_key* key) {
             return;
         break;
     default:
-        // buffer_write_adv(source_buffer, ammount_read);
+        buffer_write_adv(source_buffer, ammount_read);
+        log_debug("Starting COPY with client %s", data->client_str);
+        data->state = COPY;
+
+        // TODO: REVISAR
+        enum request_results request_parser_status = request_parser_consume(source_buffer, data->request_parser);
+        if (request_parser_status == REQUEST_PARSER_FINISH_OK) {
+            log_debug("Request from client %s finished", data->client_str);
+            if (data->origin == -1) {
+                log_debug("Client %s requested address %s", data->client_str, data->request_parser->address);
+                if (resolve_origin_address(data)) {
+                    log_error("Could not resolve origin address");
+                    return;
+                }
+                selector_set_interest(selector, target_descriptor, OP_WRITE | OP_READ);
+
+            }
+            else {
+                log_debug("Client %s already has origin address %s", data->client_str, data->request_parser->address);
+                if (selector_set_interest(selector, target_descriptor, OP_WRITE)) {
+                    log_error("Could not set interest in write for client %s", data->client_str);
+                    return;
+                }
+            }
+        }
+        else if (request_parser_status == REQUEST_PARSER_NOT_FINISH) {
+            log_debug("Request from client %s not finished", data->client_str);
+            return;
+        }
+        else if (request_parser_status == REQUEST_PARSER_FINISH_ERROR) {
+            log_error("Could not parse request from client %s", data->client_str);
+            if (close_connection(data))
+                return;
+        }
 
         // // Leo del cliente y parseo el mensaje de negociacion
         // // Si el mensaje es invalido, cierro la conexion

@@ -64,7 +64,7 @@ enum negociation_state negociation_paser_feed(struct negociation_parser* parser,
 }
 
 enum negociation_results negociation_parser_is_finished(struct negociation_parser* parser) {
-    return parser->state == NEGOCIATION_DONE ? PARSER_FINISH_OK : PARSER_NOT_FINISH;
+    return parser->state == NEGOCIATION_DONE ? NEGOCIATION_PARSER_FINISH_OK : NEGOCIATION_PARSER_NOT_FINISH;
 }
 
 int negociation_parser_has_error(struct negociation_parser* parser) {
@@ -77,9 +77,9 @@ enum negociation_results negociation_parser_consume(buffer* buff, struct negocia
         uint8_t byte = buffer_read(buff);
         negociation_paser_feed(parser, byte);
         if (negociation_parser_has_error(parser)) {
-            return PARSER_FINISH_ERROR;
+            return NEGOCIATION_PARSER_FINISH_ERROR;
         }
-        if (negociation_parser_is_finished(parser) == PARSER_FINISH_OK) {
+        if (negociation_parser_is_finished(parser) == NEGOCIATION_PARSER_FINISH_OK) {
             break;
         }
     }
