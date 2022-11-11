@@ -14,9 +14,9 @@
 
 // Estados finales de la negociacion
 enum negociation_results {
-    PARSER_FINISH_ERROR = 0,
-    PARSER_FINISH_OK,
-    PARSER_NOT_FINISH
+    NEGOCIATION_PARSER_FINISH_ERROR = 0,
+    NEGOCIATION_PARSER_FINISH_OK,
+    NEGOCIATION_PARSER_NOT_FINISH
 };
 
 

@@ -13,9 +13,9 @@
 
 // Estados finales de la request
 enum request_results {
-    PARSER_FINISH_ERROR = 0,
-    PARSER_FINISH_OK,
-    PARSER_NOT_FINISH
+    REQUEST_PARSER_FINISH_ERROR = 0,
+    REQUEST_PARSER_FINISH_OK,
+    REQUEST_PARSER_NOT_FINISH
 };
 
 // Estados de la request
