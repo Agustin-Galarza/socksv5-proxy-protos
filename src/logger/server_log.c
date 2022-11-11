@@ -17,6 +17,8 @@ bool write_server_log(const char* log_msg_fmt, ...) {
     va_list argp;
     va_start(argp, log_msg_fmt);
 
+    if (!buffer_can_write(logs_file_data_s.buff)) return true;
+
     size_t remaining_size = 0;
     uint8_t* write_ptr = buffer_write_ptr(logs_file_data_s.buff, &remaining_size);
     int chars_written = vsnprintf((char*)write_ptr, remaining_size, log_msg_fmt, argp);
