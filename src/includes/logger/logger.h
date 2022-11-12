@@ -65,7 +65,7 @@ typedef enum level
     DEBUG,
     INFO,
     WARNING
-} LogLevel;
+} log_level;
 
 struct log_level_config
 {
@@ -89,4 +89,5 @@ bool log_info(const char* fmt_msg, ...);
 bool log_error(const char* fmt_msg, ...);
 bool log_warning(const char* fmt_msg, ...);
 bool log_debug(const char* fmt_msg, ...);
+bool is_level_enabled(log_level level);
 #endif
