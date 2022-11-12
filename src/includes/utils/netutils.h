@@ -1,9 +1,9 @@
 #ifndef NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 #define NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 
-#ifdef __APPLE__
-#define MSG_NOSIGNAL 0x2000
-#endif
+// #ifdef __APPLE__
+// #define MSG_NOSIGNAL 0x2000
+// #endif
 
 #include <netinet/in.h>
 #include <sys/socket.h>
