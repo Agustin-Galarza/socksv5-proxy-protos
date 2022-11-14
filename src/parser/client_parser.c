@@ -10,7 +10,7 @@ enum parser_state {
     USERNAME_RETR,
     MSG_RETR,
     DONE,
-    ERROR
+    CONNECTION_ERROR
 };
 
 enum parser_error {

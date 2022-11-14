@@ -51,7 +51,8 @@ struct request_parser {
     uint8_t rsv;
     enum request_address_type address_type;
     uint8_t address[MAX_ADDRESS_LENGTH];
-    uint16_t address_length;
+    uint8_t address_length;
+    uint8_t _address_current_index;
     uint8_t port[MAX_PORT_LENGTH];
     uint8_t port_length;
 };

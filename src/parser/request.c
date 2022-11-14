@@ -74,24 +74,19 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
                 parser->state = REQUEST_DESTINATION_PORT;
                 log_debug("Direccion IPv4 completa");
             }
-            else {
-                parser->state = REQUEST_ERROR;
-                log_debug("Direccion IPv4 incorrecta");
-            }
         }
         else if (parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
-            if (parser->address_length < MAX_ADDRESS_LENGTH) {
-                parser->address[parser->address_length] = byte;
-                parser->address_length++;
+            if (parser->address_length == 0) {
+                parser->address_length = byte;
+                break;
+            }
+            else if (parser->_address_current_index < parser->address_length) {
+                parser->address[parser->_address_current_index++] = byte;
                 log_debug("Direccion Domain: %d", byte);
             }
-            if (parser->address_length == sizeof(parser->address) / sizeof(parser->address[0])) {
+            if (parser->_address_current_index == parser->address_length) {
                 parser->state = REQUEST_DESTINATION_PORT;
-                log_debug("Direccion Domain completa");
-            }
-            else {
-                parser->state = REQUEST_ERROR;
-                log_debug("Direccion Domain incorrecta");
+                log_debug("Direccion Domain completa: %s", parser->address);
             }
         }
         else if (parser->address_type == REQUEST_ADDRESS_TYPE_IPV6) {
@@ -104,10 +99,6 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
                 parser->state = REQUEST_DESTINATION_PORT;
                 log_debug("Direccion IPv6 completa");
             }
-            else {
-                parser->state = REQUEST_ERROR;
-                log_debug("Direccion IPv6 incorrecta");
-            }
         }
         break;
     case REQUEST_DESTINATION_PORT:
@@ -119,10 +110,6 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
         if (parser->port_length == MAX_PORT_LENGTH) {
             parser->state = REQUEST_DONE;
             log_debug("Puerto completo");
-        }
-        else {
-            parser->state = REQUEST_ERROR;
-            log_debug("Puerto incorrecto");
         }
         break;
 
@@ -156,6 +143,7 @@ void request_parser_reset(struct request_parser* parser) {
     parser->rsv = 0;
     parser->address_type = 0;
     parser->address_length = 0;
+    parser->_address_current_index = 0;
     memset(parser->address, 0, MAX_ADDRESS_LENGTH);
     parser->port_length = 0;
     memset(parser->port, 0, MAX_PORT_LENGTH);

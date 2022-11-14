@@ -25,7 +25,7 @@
 #include "utils/selector.h"
 #include "parser/client_parser.h"
 #include "utils/netutils.h"
-#include "parser/negociation.h"
+#include "parser/negotiation.h"
 #include "parser/request.h"
 #include "server/socks5_server.h"
 
