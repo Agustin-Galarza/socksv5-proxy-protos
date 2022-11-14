@@ -347,8 +347,9 @@ void handle_sig_kill(int signum) {
     snprintf(log_msg, LOGS_BUFFER_SIZE, "Server abruptly stopped on %s by %s", get_datetime_string(datetime_str), strsignal(signum));
 #endif
 
-
     log_warning(log_msg);
+
+    socks5_close_server();
 
     server_active = false;
 }

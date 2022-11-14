@@ -213,14 +213,14 @@ void socks5_client_handle_write(struct selector_key* key);
 
 void socks5_handle_block(struct selector_key* key);
 
-void client_handle_close(struct selector_key* key);
+void socks5_client_handle_close(struct selector_key* key);
 
 static const struct fd_handler
 socks5_client_handlers = {
     .handle_read = socks5_client_handle_read,
     .handle_write = socks5_client_handle_write,
     .handle_block = socks5_handle_block,
-    .handle_close = client_handle_close,
+    .handle_close = socks5_client_handle_close,
 };
 
 /*** Funciones para cada estado ***/
@@ -323,12 +323,26 @@ static const struct state_definition socks5_states[] = {
 **********************************************/
 
 bool socks5_init_server() {
-    clients = malloc(MAX_CLIENTS_AMOUNT * sizeof(struct client_data*));
+    clients = calloc(MAX_CLIENTS_AMOUNT, sizeof(struct client_data*));
     return false;
 }
 
 void socks5_close_server() {
     if (clients != NULL) {
+        for (int i = 0; i < MAX_CLIENTS_AMOUNT; i++) {
+            if (clients[i] != NULL) {
+                struct selector_key key = {
+                    .s = clients[i]->selector,
+                    .fd = clients[i]->client,
+                    .data = clients[i]
+                };
+                socks5_client_handle_close(&key);
+                if (clients[i]->origin > 0) {
+                    key.fd = clients[i]->origin;
+                    socks5_client_handle_close(&key);
+                }
+            }
+        }
         free(clients);
         clients = NULL;
     }
@@ -671,7 +685,7 @@ void socks5_handle_block(struct selector_key* key) {
     stm_handler_block(&client->stm, key);
 }
 
-void client_handle_close(struct selector_key* key) {
+void socks5_client_handle_close(struct selector_key* key) {
     struct client_data* client = GET_DATA(key);
     stm_handler_close(&client->stm, key);
 }
@@ -1128,8 +1142,8 @@ static unsigned copy_write(struct selector_key* key) {
 
     struct buffer* target_buffer = target_descriptor == data->client ? data->read_buffer : data->write_buffer;
 
-    char addr_str[ADDR_STR_MAX_SIZE];
-    log_debug("Writing into %s", print_address_from_descriptor(target_descriptor, addr_str));
+    // char addr_str[ADDR_STR_MAX_SIZE];
+    // log_debug("Writing into %s", print_address_from_descriptor(target_descriptor, addr_str));
 
     // TODO: check if write was completed
     if (write_to_client(target_descriptor, target_buffer)) {
