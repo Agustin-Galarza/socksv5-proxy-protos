@@ -205,6 +205,8 @@ socket_descriptor socks5_try_connect(struct client_data* client);
 
 int free_addrinfo_on_error(struct addrinfo* addrinfo, char* message);
 
+uint8_t choose_socks5_method(uint8_t methods[2]);
+
 // Event Handlers
 
 void socks5_client_handle_read(struct selector_key* key);
@@ -757,9 +759,18 @@ negotiating_res_init(const unsigned state, struct selector_key* key) {
 
     log_debug("Sending hello");
 
+    // Elegir el método de entre los que nos dió el usuario
+    uint8_t used_method = NO_ACCEPTABLE_METHODS;
+    if (client->negociation_parser->methods[1] == NO_ACCEPTABLE_METHODS) {
+        used_method = client->negociation_parser->methods[0];
+    }
+    else {
+        used_method = choose_socks5_method(client->negociation_parser->methods);
+    }
+
     buffer_reset(client->write_buffer);
     buffer_write(client->write_buffer, SOCKS_VER_BYTE);
-    buffer_write(client->write_buffer, client->negociation_parser->methods[0]);
+    buffer_write(client->write_buffer, used_method);
 
     selector_set_interest(key->s, client->client, OP_WRITE);
 }
@@ -1195,4 +1206,11 @@ static void close_connection_error(const unsigned state, struct selector_key* ke
     struct client_data* client = GET_DATA(key);
     log_error("Error");
     socks5_close_connection(client);
+}
+
+uint8_t choose_socks5_method(uint8_t methods[2]) {
+    //TODO: de momento no implementamos autenticación, así que sólo podemos soportar este método
+    if (methods[0] == USERNAME_PASSWORD && methods[1] == USERNAME_PASSWORD)
+        return NO_ACCEPTABLE_METHODS;
+    return NO_AUTENTICATION;
 }

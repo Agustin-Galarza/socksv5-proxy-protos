@@ -9,6 +9,7 @@ struct negotiation_parser* negotiation_parser_init() {
     parser->state = NEGOTIATION_VERSION;
     parser->version = 0;
     parser->nmethods = 0;
+    parser->valid_methods_count = 0;
 
     memset(parser->methods, NO_ACCEPTABLE_METHODS, ALLOWED_METHODS_AMOUNT);
 
@@ -39,19 +40,19 @@ enum negotiation_state negociation_paser_feed(struct negotiation_parser* parser,
         log_debug("Cantidad de metodos correcta");
         break;
     case NEGOTIATION_METHODS:
-        if (byte == NO_AUTENTICATION || byte == USERNAME_PASSWORD) {
-            parser->methods[parser->nmethods - 1] = byte;
-            parser->nmethods--;
+        if ((byte == NO_AUTENTICATION || byte == USERNAME_PASSWORD) && parser->valid_methods_count < 2) {
+            parser->methods[parser->valid_methods_count++] = byte;
             log_debug("Metodo correcto: %d", byte);
         }
-        else {
-            parser->state = NEGOTIATION_ERROR;
-            log_debug("Metodo incorrecto");
-        }
+        parser->nmethods--;
         if (parser->nmethods == 0) {
+            if (parser->methods[0] == NO_ACCEPTABLE_METHODS) {
+                parser->state = NEGOTIATION_ERROR;
+                log_debug("No se proveyeron métodos válidos");
+                break;
+            }
             parser->state = NEGOTIATION_DONE;
         }
-
         break;
     case NEGOTIATION_DONE:
         log_debug("Negociacion finalizada");
