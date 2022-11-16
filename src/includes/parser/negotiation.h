@@ -35,6 +35,7 @@ struct negotiation_parser {
 
     uint8_t version;
     uint8_t nmethods;
+    uint8_t valid_methods_count;
     uint8_t methods[ALLOWED_METHODS_AMOUNT];
 };
 
