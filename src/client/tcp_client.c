@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <errno.h>
 
-#include "logger/logger.h"
+#include "utils/logger/logger.h"
 #include "client/tcp_client_util.h"
 #include "client/conf.h"
 

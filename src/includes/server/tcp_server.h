@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "parser/args.h" // struct users
+#include "utils/parser/args.h" // struct users
 
 #define SERVER_MAX_USERS 500
 

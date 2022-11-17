@@ -7,10 +7,10 @@
 #include <assert.h>
 
 #include "server/socks5_server.h"
-#include "logger/logger.h"
+#include "utils/logger/logger.h"
 #include "utils/representation.h"
-#include "parser/negotiation.h"
-#include "parser/request.h"
+#include "utils/parser/negotiation.h"
+#include "utils/parser/request.h"
 #include "utils/stm.h"
 
 /*********************************

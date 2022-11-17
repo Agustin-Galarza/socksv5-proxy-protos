@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "logger/logger.h"
+#include "utils/logger/logger.h"
 #include "utils/buffer.h"
 #include "server/tcp_server.h"
-#include "parser/args.h"
+#include "utils/parser/args.h"
 
 #ifdef DEFAULT_FILE_NAME
 #undef DEFAULT_FILE_NAME

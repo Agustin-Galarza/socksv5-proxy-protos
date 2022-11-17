@@ -19,14 +19,14 @@
 
 
 #include "server/tcp_server.h"
-#include "logger/logger.h"
+#include "utils/logger/logger.h"
 #include "utils/buffer.h"
 #include "utils/representation.h"
 #include "utils/selector.h"
-#include "parser/client_parser.h"
+#include "utils/parser/client_parser.h"
 #include "utils/netutils.h"
-#include "parser/negotiation.h"
-#include "parser/request.h"
+#include "utils/parser/negotiation.h"
+#include "utils/parser/request.h"
 #include "server/socks5_server.h"
 
  /*********************************

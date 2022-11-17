@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <check.h>
-#include "selector.h"
-#include "stm.h"
+#include "utils/selector.h"
+#include "utils/stm.h"
 
 enum test_states {
     A,
@@ -88,7 +88,7 @@ START_TEST(test_buffer_misc) {
     ck_assert_uint_eq(false, data.arrived[A]);
     ck_assert_uint_eq(false, data.arrived[B]);
     ck_assert_uint_eq(false, data.arrived[C]);
-    ck_assert_ptr_null(stm.current);
+    ck_assert_ptr_eq(stm.current, NULL);
 
     stm_handler_read(&stm, &key);
     ck_assert_uint_eq(B, stm_state(&stm));

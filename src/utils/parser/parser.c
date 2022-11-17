@@ -3,7 +3,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "parser/parser.h"
+#include "utils/parser/parser.h"
 
 /* CDT del parser */
 struct parser

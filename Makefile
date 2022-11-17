@@ -4,6 +4,7 @@ CLIENT_COMPILE_TARGET := socks5c
 SRC_DIR := ./src
 BUILD_DIR := ./build
 TARGET_DIR := ./bin
+TEST_DIR := ./test
 
 # Dirs relative to src
 SERVER_DIR := server
@@ -23,6 +24,10 @@ CL_OBJS := $(CL_SRCS:%.c=$(BUILD_DIR)/%.o)
 
 UT_SRCS := $(shell find $(SRC_DIR)/$(UTILS_DIR) -name '*.c')
 UT_OBJS := $(UT_SRCS:%.c=$(BUILD_DIR)/%.o)
+
+TEST_SRCS := $(shell find $(TEST_DIR) -name '*.c')
+TEST_OBJS := $(TEST_SRCS:%.c=$(BUILD_DIR)/%.o)
+TEST_COMPILE_TARGETS := $(TEST_SRCS:%.c=$(TARGET_DIR)/%)
 
 INC_DIRS := $(shell find $(SRC_DIR)/$(INCLUDES_DIR) -type d)
 
@@ -57,6 +62,8 @@ CL_CFLAGS :=
 
 CL_LDFLAGS :=
 
+TEST_LDFLAGS :=
+
 ########### Targets
 
 all: server client
@@ -68,18 +75,29 @@ server: $(TARGET_DIR)/$(SERVER_COMPILE_TARGET)
 
 client: $(TARGET_DIR)/$(CLIENT_COMPILE_TARGET)
 
+test: $(TEST_COMPILE_TARGETS)
+
 $(TARGET_DIR)/$(SERVER_COMPILE_TARGET): $(SV_OBJS) $(UT_OBJS)
-	echo "socks5d target"
+	@echo "socks5d target"
 
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(SV_LDFLAGS) $(SV_OBJS) $(UT_OBJS) -o $@
 	@chmod +x $<
 
 $(TARGET_DIR)/$(CLIENT_COMPILE_TARGET): $(CL_OBJS) $(UT_OBJS)
-	echo "socks5c target"
+	@echo "socks5c target"
 
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(CL_LDFLAGS) $(CL_OBJS) $(UT_OBJS) -o $@
+	@chmod +x $<
+
+$(TEST_COMPILE_TARGETS): $(TEST_OBJS) $(UT_OBJS)
+	@echo "test target"
+	@echo $@
+	@echo $<
+
+	mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) $(TEST_LDFLAGS) $< $(UT_OBJS) -o $@
 	@chmod +x $<
 
 # SV_OBJS
@@ -108,6 +126,15 @@ $(BUILD_DIR)/$(SRC_DIR)/$(UTILS_DIR)/%.o: $(SRC_DIR)/$(UTILS_DIR)/%.c
 
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
+
+# TEST_OBJS
+$(BUILD_DIR)/$(TEST_DIR)/%.o: $(TEST_DIR)/%.c
+	@echo "test_objs target"
+	@echo $@
+	@echo $<
+
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INC_FLAGS) -I./test -c $< -o $@
 
 clean:
 	rm -fr $(BUILD_DIR)

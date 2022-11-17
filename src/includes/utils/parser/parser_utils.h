@@ -7,7 +7,7 @@
  * Provee parsers reusables, como por ejemplo para verificar que
  * un string es igual a otro de forma case insensitive.
  */
-#include "parser/parser.h"
+#include "utils/parser/parser.h"
 
 enum string_cmp_event_types
 {

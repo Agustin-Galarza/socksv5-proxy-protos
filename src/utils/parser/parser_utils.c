@@ -2,14 +2,13 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "parser/parser_utils.h"
+#include "utils/parser/parser_utils.h"
 
 const char*
 parser_utils_strcmpi_event(const enum string_cmp_event_types type) {
     const char* ret;
 
-    switch (type)
-    {
+    switch (type) {
     case STRING_CMP_MAYEQ:
         ret = "wait(c)";
         break;
@@ -80,8 +79,7 @@ struct parser_definition
     size_t* nstates = calloc(n + 2, sizeof(*nstates));
     struct parser_state_transition* transitions = calloc(3 * (n + 2),
                                                          sizeof(*transitions));
-    if (states == NULL || nstates == NULL || transitions == NULL)
-    {
+    if (states == NULL || nstates == NULL || transitions == NULL) {
         free(states);
         free(nstates);
         free(transitions);
@@ -99,8 +97,7 @@ struct parser_definition
     const size_t st_eq = n;
     const size_t st_neq = n + 1;
 
-    for (size_t i = 0; i < n; i++)
-    {
+    for (size_t i = 0; i < n; i++) {
         const size_t dest = (i + 1 == n) ? st_eq : i + 1;
 
         transitions[i * 3 + 0].when = tolower(s[i]);

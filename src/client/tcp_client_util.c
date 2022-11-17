@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#include "logger/logger.h"
+#include "utils/logger/logger.h"
 #include "utils/util.h"
 #include "client/tcp_client_util.h"
 

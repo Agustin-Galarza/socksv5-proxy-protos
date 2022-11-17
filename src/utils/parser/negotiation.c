@@ -1,5 +1,5 @@
-#include "parser/negotiation.h"
-#include "logger/logger.h"
+#include "utils/parser/negotiation.h"
+#include "utils/logger/logger.h"
 #include <string.h>
 
 struct negotiation_parser* negotiation_parser_init() {
@@ -20,7 +20,7 @@ void negotiation_parser_free(struct negotiation_parser* parser) {
     free(parser);
 }
 
-enum negotiation_state negociation_paser_feed(struct negotiation_parser* parser, uint8_t byte) {
+enum negotiation_state negotiation_paser_feed(struct negotiation_parser* parser, uint8_t byte) {
     switch (parser->state) {
     case NEGOTIATION_VERSION:
         if (byte == VERSION) {
@@ -76,7 +76,7 @@ enum negotiation_results negotiation_parser_consume(buffer* buff, struct negotia
     while (buffer_can_read(buff)) {
         log_debug("Estado: %d", parser->state);
         uint8_t byte = buffer_read(buff);
-        negociation_paser_feed(parser, byte);
+        negotiation_paser_feed(parser, byte);
         if (negotiation_parser_has_error(parser)) {
             return NEGOTIATION_PARSER_FINISH_ERROR;
         }
@@ -88,5 +88,5 @@ enum negotiation_results negotiation_parser_consume(buffer* buff, struct negotia
 }
 
 void negotiation_parser_reset(struct negotiation_parser* parser) {
-    negotiation_parser_init(parser);
+    *parser = *negotiation_parser_init();
 }
