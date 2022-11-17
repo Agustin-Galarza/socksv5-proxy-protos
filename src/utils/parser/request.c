@@ -112,7 +112,9 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
             log_debug("Puerto completo");
         }
         break;
-
+    case REQUEST_ERROR:
+    case REQUEST_DONE:
+        break;
     }
     return parser->state;
 }
