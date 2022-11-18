@@ -82,7 +82,6 @@ enum request_state request_parser_feed(struct request_parser* parser, uint8_t by
             }
             else if (parser->_address_current_index < parser->address_length) {
                 parser->address[parser->_address_current_index++] = byte;
-                log_debug("Direccion Domain: %d", byte);
             }
             if (parser->_address_current_index == parser->address_length) {
                 parser->state = REQUEST_DESTINATION_PORT;
