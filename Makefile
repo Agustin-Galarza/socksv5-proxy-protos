@@ -39,7 +39,9 @@ ASAN_FLAGS := -fsanitize=address -fsanitize=undefined -fno-asynchronous-unwind-t
 ASAN_LDFLAGS := -fsanitize=address -fsanitize=undefined
 GNU_FLAGS := -D_POSIX_C_SOURCE=200809L
 LDLIBS := -pthread
-# NO_UNUSED_FLAGS := -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
+ifndef unused
+NO_UNUSED_FLAGS := -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
+endif
 ## Turn on optimization for production
 ifdef prod
 OPT_FLAGS := -O3 # optimize (remove for debugging) 

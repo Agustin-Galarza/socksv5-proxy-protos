@@ -1,7 +1,3 @@
-/**
- * TODO:
- *  pasar a usar la máquina de estados
- */
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>
@@ -29,9 +25,9 @@
 #include "utils/parser/request.h"
 #include "server/socks5_server.h"
 
- /*********************************
- |          Definitions          |
- *********************************/
+/*********************************
+|          Definitions          |
+*********************************/
 
 #define IPV4_HOST_ADDR "127.0.0.1"
 
