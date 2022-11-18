@@ -1,6 +1,6 @@
+#include <string.h>
 
 #include "utils/parser/pop3_parser.h"
-#include <string.h>
 #include "utils/logger/logger.h"
 
 
@@ -201,7 +201,7 @@ enum pop3_results pop3_parser_is_finished(struct pop3_parser* parser) {
     return parser->state == POP3_STATE_DONE ? POP3_FINISH_OK : POP3_NOT_FINISH;
 }
 
-enum pop3_results request_parser_consume(buffer* buff, struct pop3_parser* parser) {
+enum pop3_results pop3_parser_consume(buffer* buff, struct pop3_parser* parser) {
     while (buffer_can_read(buff)) {
         uint8_t c = buffer_read(buff);
         enum pop3_state st = pop3_parser_feed(parser, c);
