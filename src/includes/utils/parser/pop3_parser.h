@@ -6,17 +6,17 @@
 
 #define MAX_POP3_LENGHT 256
 
-#define POP_U(x) x == "u" || x == "U"
-#define POP_S(x) x == "s" || x == "S"
-#define POP_E(x) x == "e" || x == "E"
-#define POP_R(x) x == "r" || x == "R"
+#define POP_U(x) ((char) x == 'u' || (char) x == 'U')
+#define POP_S(x) ((char) x == 's' || (char) x == 'S')
+#define POP_E(x) ((char) x == 'e' || (char) x == 'E')
+#define POP_R(x) ((char) x == 'r' || (char) x == 'R')
 
-#define POP_P(x) x == "p" || x == "P"
-#define POP_A(x) x == "a" || x == "A"
-#define POP_S(x) x == "s" || x == "S"
+#define POP_P(x) ((char) x == 'p' || (char) x == 'P')
+#define POP_A(x) ((char) x == 'a' || (char) x == 'A')
+#define POP_S(x) ((char) x == 's' || (char) x == 'S')
 
-#define CRLF_1(x) x == "\r"
-#define CRLF_2(x) x == "\n"
+#define CRLF_1(x) ((char) x == '\r')
+#define CRLF_2(x) ((char) x == '\n')
 
 
 // Estados finales del parser
@@ -67,7 +67,7 @@ void pop3_parser_free(struct pop3_parser* parser);
 enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c);
 
 // Parsea un buffer
-enum pop3_results request_parser_consume(buffer* buff, struct pop3_parser* parser);
+enum pop3_results pop3_parser_consume(buffer* buff, struct pop3_parser* parser);
 
 // Devuelve el usuario
 char* pop3_parser_get_user(struct pop3_parser* parser);
@@ -79,7 +79,7 @@ char* pop3_parser_get_pass(struct pop3_parser* parser);
 enum pop3_results pop3_parser_is_finished(struct pop3_parser* parser);
 
 // Ckeckea si hay error
-int request_parser_has_error(struct pop3_parser* parser);
+int pop3_parser_has_error(struct pop3_parser* parser);
 
 // Resetea el parser
 void pop3_parser_reset(struct pop3_parser* parser);

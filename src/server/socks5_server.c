@@ -1,3 +1,8 @@
+/**
+ * TODO:
+ * - Manejar cierre con sigint
+ * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
+ */
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
@@ -13,9 +18,9 @@
 #include "utils/parser/request.h"
 #include "utils/stm.h"
 
-/*********************************
-|          Definitions          |
-*********************************/
+ /*********************************
+ |          Definitions          |
+ *********************************/
 
 #define MAX_CLIENTS_AMOUNT 500
 
@@ -59,6 +64,12 @@ enum socks5_reply_status {
     CONNECTION_REFUSED,
     TTL_EXPIRED,
     COMMAND_NOT_SUPPORTED,
+};
+
+enum socks5_client_status {
+    ACTIVE = 0,
+    CLOSING,
+    INACTIVE
 };
 
 struct negotiation_struct {
@@ -180,6 +191,8 @@ struct client_data
 
     fd_selector selector;
 
+    enum socks5_client_status status;
+
     // cantidad de referencias para saber cuando hacer free del struct
     uint8_t references;
 };
@@ -226,7 +239,7 @@ accept_new_connection(socket_descriptor server_socket);
 
 bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer);
 
-bool socks5_close_connection(struct client_data* client);
+bool socks5_unregister_client(struct client_data* client);
 
 struct client_data*
     socks5_generate_new_client_data(socket_descriptor client, fd_selector selector);
@@ -276,7 +289,7 @@ static unsigned read_address_req(struct selector_key* key);
 // RESOLVE_ADDRESS
 static void resolve_addr_request(const unsigned state, struct selector_key* key);
 static void resolve_addr_close(const unsigned state, struct selector_key* key);
-static void* resolve_fqdn_address(void* data); // TODO: selector handler
+static void* resolve_fqdn_address(void* data);
 static unsigned finish_address_resolution(struct selector_key* key);
 
 // CONNECTING
@@ -348,7 +361,23 @@ static const struct state_definition socks5_states[] = {
         .on_departure = copy_close,
         .on_read_ready = copy_read,
         .on_write_ready = copy_write,
-    },{
+    },
+    /*
+    Ante un error en la ejecución del cliente:
+        - se va al estado de error
+        - si el cliente no está ya en estado CLOSING, el estado de error marca al cliente como CLOSING y se encarga de desregistrar los fd.
+            como se está en el estado de error no se ejecuta ninguna función de cierre.
+        - el estado de error cierra los fd, marca al cliente como INACTIVE y libera los recursos.
+
+    Ante un error en la ejecución del server:
+        - el servidor marca al cliente como CLOSING
+        - el servidor desregistra los fd
+            si el cliente está en un estado no terminal, se va a invocar su método de on_departure el cuál se va a fijar en el estado del cliente, va a realizar la rutina de cierre que sea necesaria, y luego continuará al estado de error.
+
+    Ante un cierre normal del cliente:
+        lo mismo que para el estado de error.
+*/
+    {
         .state = CONNECTION_DONE,
         .on_arrival = close_connection_normally,
     },{
@@ -371,17 +400,9 @@ void socks5_close_server() {
     if (clients != NULL) {
         for (int i = 0; i < MAX_CLIENTS_AMOUNT; i++) {
             if (clients[i] != NULL) {
-                // TODO: properly close server
-                // struct selector_key key = {
-                //     .s = clients[i]->selector,
-                //     .fd = clients[i]->client,
-                //     .data = clients[i]
-                // };
-                // socks5_client_handle_close(&key);
-                // if (clients[i]->origin > 0) {
-                //     key.fd = clients[i]->origin;
-                //     socks5_client_handle_close(&key);
-                // }
+                clients[i]->status = CLOSING;
+                socks5_unregister_client(clients[i]);
+                clients[i] = NULL;
             }
         }
         free(clients);
@@ -450,7 +471,7 @@ bool write_to_client(socket_descriptor client_socket, struct buffer* client_buff
     return false;
 }
 
-bool socks5_close_connection(struct client_data* data) {
+bool socks5_unregister_client(struct client_data* data) {
     bool error = false;
 
     fd_selector selector = data->selector;
@@ -500,6 +521,8 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
 
     data->references = 1;
 
+    data->status = ACTIVE;
+
     memset(&data->client, 0, sizeof(data->client));
 
     memset(&data->origin, 0, sizeof(data->origin));
@@ -521,9 +544,10 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
 }
 
 void socks5_free_client_data(struct client_data* data) {
+    log_debug("Enter freeclientdata");
     if (data == NULL || data->references-- > 1)
         return;
-
+    log_debug("Freeing client");
     if (data->read_buffer != NULL) {
         free(data->read_buffer->data);
         free(data->read_buffer);
@@ -535,13 +559,18 @@ void socks5_free_client_data(struct client_data* data) {
     if (data->client_str != NULL) {
         free(data->client_str);
     }
+    if (data->origin_str != NULL) {
+        free(data->origin_str);
+    }
+    data->status = INACTIVE;
 
     // Remove client register
     for (size_t i = 0; i < socks5_server_data.client_count; i++) {
         if (clients[i] == data) {
-            for (size_t j = i + 1; j < socks5_server_data.client_count; j++)
-                clients[i] = clients[j];
-            clients[socks5_server_data.client_count] = NULL;
+            // for (size_t j = i + 1; j < socks5_server_data.client_count; j++)
+            //     clients[i] = clients[j];
+            // clients[socks5_server_data.client_count] = NULL;
+            clients[i] = NULL;
             break;
         }
     }
@@ -552,12 +581,11 @@ bool socks5_add_new_client(socket_descriptor client, fd_selector selector) {
     // At first we have to resolve the origin address, meanwhile the new client stays idle
     struct client_data* data = socks5_generate_new_client_data(client, selector);
 
-    clients[socks5_server_data.client_count] = data;
+    clients[socks5_server_data.client_count++] = data;
 
     if (selector_register(selector, client, &socks5_client_handlers, OP_READ, data) != SELECTOR_SUCCESS) {
         return true;
     }
-    socks5_server_data.client_count++;
     return false;
 }
 
@@ -644,6 +672,10 @@ negotiating_req_init(const unsigned state, struct selector_key* key) {
 
 static void
 negotiating_req_close(const unsigned state, struct selector_key* key) {
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
+        return;
+    }
 }
 
 static unsigned
@@ -729,6 +761,11 @@ static unsigned write_hello(struct selector_key* key) {
 
 static void
 negotiating_res_close(const unsigned state, struct selector_key* key) {
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
+
+        return;
+    }
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
 
     if (client->selected_method == NO_ACCEPTABLE_METHODS)
@@ -755,9 +792,11 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
 }
 
 static void address_req_close(const unsigned state, struct selector_key* key) {
-    // struct client_data* client = GET_DATA(key);
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
 
-    // request_parser_free(client->request_parser);
+        return;
+    }
 }
 
 static unsigned read_address_req(struct selector_key* key) {
@@ -918,7 +957,11 @@ resolve_fqdn_address_end:
 }
 
 static void resolve_addr_close(const unsigned state, struct selector_key* key) {
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
 
+        return;
+    }
 }
 
 static unsigned finish_address_resolution(struct selector_key* key) {
@@ -969,11 +1012,20 @@ static void start_connection(const unsigned state, struct selector_key* key) {
     fd_selector selector = key->s;
 
     // Add origin
-    selector_register(selector, origin_local_socket, &socks5_client_handlers, OP_WRITE, data);
+    data->references++;
+    if (selector_register(selector, origin_local_socket, &socks5_client_handlers, OP_WRITE, data) != SELECTOR_SUCCESS) {
+        //TODO: handle error
+        close_connection_error(CONNECTION_ERROR, key);
+        return;
+    }
 }
 
 static void connecting_close(const unsigned state, struct selector_key* key) {
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
 
+        return;
+    }
 }
 
 static unsigned check_connection_with_origin(struct selector_key* key) {
@@ -1030,6 +1082,11 @@ address_res_init_end:
 }
 
 static void address_res_close(const unsigned state, struct selector_key* key) {
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
+
+        return;
+    }
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
     request_parser_free(client->parser);
@@ -1088,7 +1145,10 @@ static void copy_init(const unsigned state, struct selector_key* key) {
 }
 
 static void copy_close(const unsigned state, struct selector_key* key) {
-
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_error(CONNECTION_ERROR, key);
+        return;
+    }
 }
 
 static unsigned copy_write(struct selector_key* key) {
@@ -1137,6 +1197,7 @@ static unsigned copy_read(struct selector_key* key) {
             }
             return CONNECTION_ERROR;
         }
+
         break;
     default:
         buffer_write_adv(source->write_buffer, ammount_read);
@@ -1150,13 +1211,37 @@ static unsigned copy_read(struct selector_key* key) {
 
 static void close_connection_normally(const unsigned state, struct selector_key* key) {
     struct client_data* client = GET_DATA(key);
-    socks5_close_connection(client);
+    log_info("Closing connection of %s", client->client_str);
+    if (client->status != CLOSING) {
+        client->status = CLOSING;
+        socks5_unregister_client(client);
+        close(client->client_fd);
+        if (client->origin_fd > 0) {
+            close(client->origin_fd);
+        }
+        client->references = 1;
+        socks5_free_client_data(client);
+        return;
+    }
+    close(key->fd);
 }
 
 static void close_connection_error(const unsigned state, struct selector_key* key) {
     struct client_data* client = GET_DATA(key);
-    log_error("Error");
-    socks5_close_connection(client);
+    log_error("There was an error on execution for %s", client->client_str);
+    if (client->status != CLOSING) {
+        client->status = CLOSING;
+        socks5_unregister_client(client);
+        close(client->client_fd);
+        if (client->origin_fd > 0) {
+            close(client->origin_fd);
+        }
+        client->references = 1;
+        socks5_free_client_data(client);
+        return;
+    }
+    close(key->fd);
+    socks5_free_client_data(client);
 }
 
 uint8_t choose_socks5_method(uint8_t methods[2]) {
