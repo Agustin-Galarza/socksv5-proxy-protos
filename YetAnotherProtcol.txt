@@ -3,6 +3,11 @@ Yet Another Protocol (YAP) V1.0
 1. Introduction
 
 The goal of this RFC is to describe how to interact and monitor the SOCKS5v5[RFC1928] proxy. YAP is a TCP-based binary protocol.
+YAP was developed for the subject "Protocolos de Comunicación - 2Q2022" by Group 4:
+	- Agustín Benvenuto ()
+	- Agustín Ezequiel Galarza ()
+	- Agustina Sol Ortu (61548)
+	- Milagros Cornídez (61432)
 
 Available operations:
 
@@ -68,9 +73,9 @@ Data types supported:
 		Where:
 			- VER: protocol version number, currently 0x01
 			- STATUS:
-				- 0x00: OK
-				- 0x01: Invalid user
-				- 0x02 - 0xFF: Not used
+				- '0x00': OK
+				- '0x01': Invalid user
+				- '0x02' - 0xFF: Not used
 
 3. General
 	
@@ -129,7 +134,7 @@ Data types supported:
 
 		3.3.1 Request
 
-			+--------+--------+---------+
+			+--------+---------+--------+
             		|  CMD   | USRNAME | PASSWD |
             		+--------+---------+--------+
             		| '0x03' | string  | string | 
@@ -151,6 +156,74 @@ Data types supported:
 				- '0x00': OK
 				- '0x01': Invalid user
 				- '0x02' - '0xFF': Not used 
+
+
+	3.4 Remove user
+	
+		3.4.1 Request
+
+			+--------+---------+
+            		|  CMD   | USRNAME | 
+            		+--------+---------+
+            		| '0x04' | string  | 
+            		+--------+---------+
+
+			Where:
+				- USRNAME: username
+
+		3.4.2 Response
+
+			+--------+--------+
+            		|  CMD   | STATUS | 
+            		+--------+--------+
+            		| '0x04' | u_int8 | 
+            		+--------+--------+
+
+			Where STATUS:
+				- '0x00': OK
+				- '0x01': Invalid user
+				- '0x02' - '0xFF': Not used 
+
+	3.5 Configuration
+
+		3.5.1 Change timeout request
+
+			+--------+--------+-----------+
+            		|  CMD   |  CONF  |  SECONDS  |
+            		+--------+--------+-----------+
+            		| '0x05' | '0x00' |  u_int16  |
+            		+--------+--------+-----------+
+
+			Where:
+				- SECONDS: timeout value in seconds for clients
+
+		3.5.2 Change buffer size request
+
+			+--------+--------+-----------+
+            		|  CMD   |  CONF  | BUFF_SIZE |
+            		+--------+--------+-----------+
+            		| '0x05' | '0x01' |  u_int16  |
+            		+--------+--------+-----------+
+
+			Where:
+				- BUFF_SIZE: buffer size for communication
+
+		3.5.3 Response
+	
+			+--------+--------+----------+
+            		|  CMD   |  CONF  |  STATUS  |
+            		+--------+--------+----------+
+            		| '0x05' | u_int8 |  u_int8  |
+            		+--------+--------+----------+
+
+			Where:
+				- CONF: same value as the configuration requested
+				-STATUS:
+					- '0x00': OK. CONF value was updated succesfully
+					- '0x01': Failed. Could not update CONF value
+					- '0x02' - 0xFF': Not used
+				
+
 
 
 
