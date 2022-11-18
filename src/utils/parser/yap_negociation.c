@@ -1,0 +1,93 @@
+#include "utils/parser/yap_negociation.h"
+#include <string.h>
+#include "utils/logger/logger.h"
+
+// Inicializa el parser
+struct yap_negociation_parser* yap_negociation_parser_init() {
+    struct yap_negociation_parser* parser = (struct yap_negociation_parser*)malloc(sizeof(struct yap_negociation_parser));
+    yap_negociation_parser_reset(parser);
+    return parser;
+}
+
+// Parsea un byte
+enum yap_negociation_result request_yap_negociation_parser_feed(struct yap_negociation_parser* parser, uint8_t byte) {
+    switch (parser->state) {
+    case YAP_NEGOCIATION_PARSER_VERSION:
+        if (byte == VERSION) {
+            parser->state = YAP_NEGOCIATION_PARSER_USERNAME;
+            log_debug("YAP_NEGOCIATION_PARSER_VERSION");
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+        else {
+            parser->state = YAP_NEGOCIATION_PARSER_ERROR;
+            log_debug("YAP_NEGOCIATION_PARSER_VERSION_ERROR");
+            return YAP_NEGOCIATION_ERROR;
+        }
+    case YAP_NEGOCIATION_PARSER_USERNAME:
+        if (byte == LIMITER) {
+            parser->state = YAP_NEGOCIATION_PARSER_PASSWORD;
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_DONE");
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+        else {
+            parser->username[parser->username_len] = byte;
+            parser->username_len++;
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_INCOMPLETE");
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+    case YAP_NEGOCIATION_PARSER_PASSWORD:
+        if (byte == LIMITER) {
+            parser->state = YAP_NEGOCIATION_PARSER_DONE;
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_DONE");
+            return YAP_NEGOCIATION_SUCCESS;
+        }
+        else {
+            parser->password[parser->password_len] = byte;
+            parser->password_len++;
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_INCOMPLETE");
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+    case YAP_NEGOCIATION_PARSER_DONE:
+        log_debug("YAP_NEGOCIATION_PARSER_DONE");
+        return YAP_NEGOCIATION_SUCCESS;
+    case YAP_NEGOCIATION_PARSER_ERROR:
+        log_debug("YAP_NEGOCIATION_PARSER_ERROR");
+        return YAP_NEGOCIATION_ERROR;
+    default:
+        return YAP_NEGOCIATION_ERROR;
+    }
+}
+
+// Consume un byte del buffer
+enum yap_negociation_result yap_negociation_parser_consume(struct buffer* buffer, struct yap_negociation_parser* parser) {
+    while (buffer_can_read(buffer)) {
+        uint8_t byte = buffer_read(buffer);
+        enum yap_negociation_result result = request_yap_negociation_parser_feed(parser, byte);
+        if (result != YAP_NEGOCIATION_INCOMPLETE) {
+            return result;
+        }
+    }
+    return yap_negociation_parser_is_done(parser);
+}
+
+// Checkeo si llego al final
+enum yap_negociation_result yap_negociation_parser_is_done(struct yap_negociation_parser* parser) {
+    return parser->state == YAP_NEGOCIATION_PARSER_DONE ? YAP_NEGOCIATION_SUCCESS : YAP_NEGOCIATION_INCOMPLETE;
+}
+
+// Checkeo si hubo un error
+int yap_negociation_parser_has_error(struct yap_negociation_parser* parser);
+
+// Free parser
+void yap_negociation_parser_free(struct yap_negociation_parser* parser) {
+    free(parser);
+}
+
+// Reset parser
+void yap_negociation_parser_reset(struct yap_negociation_parser* parser) {
+    parser->state = YAP_NEGOCIATION_PARSER_VERSION;
+    parser->username_len = 0;
+    parser->password_len = 0;
+    memset(parser->username, 0, MAX_USERNAME);
+    memset(parser->password, 0, MAX_PASSWORD);
+}

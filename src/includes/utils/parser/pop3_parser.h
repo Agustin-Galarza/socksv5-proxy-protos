@@ -58,7 +58,7 @@ struct pop3_parser {
 };
 
 // Inicializa el parser
-void pop3_parser_init(struct pop3_parser* parser);
+struct pop3_parser* pop3_parser_init();
 
 // Libera la memoria del parser
 void pop3_parser_free(struct pop3_parser* parser);

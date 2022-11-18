@@ -4,7 +4,7 @@
 #include "utils/logger/logger.h"
 
 
-void pop3_parser_init(struct pop3_parser* parser) {
+struct pop3_parser* pop3_parser_init() {
     struct pop3_parser* parser = malloc(sizeof(struct pop3_parser));
     pop3_parser_reset(parser);
     return parser;
