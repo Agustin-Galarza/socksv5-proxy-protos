@@ -43,8 +43,8 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
             log_debug("Estado correcto");
         }
         else {
-            parser->state = POP3_ERROR;
-            log_debug("Estado incorrecto");
+            parser->state = POP3_STATE_INIT;
+            log_debug("No se ha terminado");
         }
         break;
     case POP3_STATE_USER_U:
