@@ -1188,9 +1188,10 @@ static unsigned sniff_read(struct selector_key* key) {
         source->target->duplex = SHTDWN_WRITE(source->target->duplex);
         if (shutdown(*source->fd, SHUT_RD)) {
             log_error("Could not shutdown %s: %s", source->to_str, strerror(errno));
-            if (shutdown(*source->target->fd, SHUT_WR)) {
-                log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
-            }
+            return CONNECTION_ERROR;
+        }
+        if (shutdown(*source->target->fd, SHUT_WR)) {
+            log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
             return CONNECTION_ERROR;
         }
 
@@ -1312,9 +1313,10 @@ static unsigned copy_read(struct selector_key* key) {
         source->target->duplex = SHTDWN_WRITE(source->target->duplex);
         if (shutdown(*source->fd, SHUT_RD)) {
             log_error("Could not shutdown %s: %s", source->to_str, strerror(errno));
-            if (shutdown(*source->target->fd, SHUT_WR)) {
-                log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
-            }
+            return CONNECTION_ERROR;
+        }
+        if (shutdown(*source->target->fd, SHUT_WR)) {
+            log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
             return CONNECTION_ERROR;
         }
 
