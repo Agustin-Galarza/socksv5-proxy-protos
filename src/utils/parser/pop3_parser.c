@@ -7,6 +7,8 @@
 struct pop3_parser* pop3_parser_init() {
     struct pop3_parser* parser = malloc(sizeof(struct pop3_parser));
     parser->buff = malloc(sizeof(struct buffer));
+
+    buffer_init(parser->buff, MAX_POP3_LENGHT, malloc(MAX_POP3_LENGHT));
     pop3_parser_reset(parser);
     return parser;
 }
@@ -17,7 +19,6 @@ void pop3_parser_reset(struct pop3_parser* parser) {
     parser->pass = NULL;
     parser->user_len = 0;
     parser->pass_len = 0;
-    buffer_init(parser->buff, MAX_POP3_LENGHT, 0);
 }
 
 
@@ -29,6 +30,8 @@ void pop3_parser_free(struct pop3_parser* parser) {
         free(parser->pass);
     }
     if (parser->buff != NULL) {
+        if (parser->buff->data != NULL)
+            free(parser->buff->data);
         free(parser->buff);
     }
     free(parser);
@@ -103,6 +106,7 @@ enum pop3_state pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
             parser->user[parser->user_len] = '\0';
             parser->state = POP3_STATE_USER_CRLF;
             log_debug("Usuario terminado");
+            buffer_reset(parser->buff);
         }
         break;
     case POP3_STATE_USER_CRLF:
@@ -177,20 +181,20 @@ enum pop3_state pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
             parser->pass[parser->pass_len] = '\0';
             parser->state = POP3_STATE_PASS_CRLF;
             log_debug("Pass terminada");
+            buffer_reset(parser->buff);
         }
         break;
     case POP3_STATE_PASS_CRLF:
         if (CRLF_2(c)) {
             parser->state = POP3_STATE_PASS_OK;
             buffer_reset(parser->buff);
-            log_debug("Estado correcto /n");
+            log_debug("Estado correcto");
         }
         else {
             parser->state = POP3_ERROR;
             log_debug("Estado incorrecto");
+            break;
         }
-        break;
-
     case POP3_STATE_PASS_OK:
         parser->state = POP3_STATE_DONE;
         break;

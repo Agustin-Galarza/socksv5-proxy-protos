@@ -1,6 +1,7 @@
 /**
  * TODO:
  * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
+ * - Add a timeout
  */
 #include <errno.h>
 #include <string.h>
@@ -1187,9 +1188,10 @@ static unsigned sniff_read(struct selector_key* key) {
         source->target->duplex = SHTDWN_WRITE(source->target->duplex);
         if (shutdown(*source->fd, SHUT_RD)) {
             log_error("Could not shutdown %s: %s", source->to_str, strerror(errno));
-            if (shutdown(*source->target->fd, SHUT_WR)) {
-                log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
-            }
+            return CONNECTION_ERROR;
+        }
+        if (shutdown(*source->target->fd, SHUT_WR)) {
+            log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
             return CONNECTION_ERROR;
         }
 
@@ -1198,8 +1200,14 @@ static unsigned sniff_read(struct selector_key* key) {
         buffer_write_adv(source->write_buffer, ammount_read);
         if (source->parser == NULL) break;
 
+        // Creo un buffer aparte para que consuma el sniffer
+        struct buffer sniff_buffer;
+        buffer_init(&sniff_buffer, ammount_read, source->write_buffer->data);
+        buffer_write_adv(&sniff_buffer, ammount_read);
+
+
         enum pop3_results sniff_results =
-            pop3_parser_consume(source->write_buffer, source->parser);
+            pop3_parser_consume(&sniff_buffer, source->parser);
 
         switch (sniff_results) {
         case POP3_FINISH_ERROR:
@@ -1255,6 +1263,9 @@ static void sniff_n_copy_init(const unsigned state, struct selector_key* key) {
 }
 
 static void sniff_n_copy_close(const unsigned state, struct selector_key* key) {
+    if (state == SNIFF && get_sniff_struct_ptr(key)->parser != NULL) {
+        pop3_parser_free(get_sniff_struct_ptr(key)->parser);
+    }
     if (GET_DATA(key)->status == CLOSING) {
         close_connection_error(CONNECTION_ERROR, key);
         return;
@@ -1302,9 +1313,10 @@ static unsigned copy_read(struct selector_key* key) {
         source->target->duplex = SHTDWN_WRITE(source->target->duplex);
         if (shutdown(*source->fd, SHUT_RD)) {
             log_error("Could not shutdown %s: %s", source->to_str, strerror(errno));
-            if (shutdown(*source->target->fd, SHUT_WR)) {
-                log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
-            }
+            return CONNECTION_ERROR;
+        }
+        if (shutdown(*source->target->fd, SHUT_WR)) {
+            log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
             return CONNECTION_ERROR;
         }
 
