@@ -62,7 +62,9 @@ struct yap_negociation_parser {
     uint8_t username[MAX_USERNAME];
     uint8_t password[MAX_PASSWORD];
     int username_len;
+    int username_current;
     int password_len;
+    int password_current;
 };
 
 // Inicializa el parser

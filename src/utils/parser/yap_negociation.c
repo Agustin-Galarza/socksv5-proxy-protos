@@ -24,28 +24,46 @@ enum yap_negociation_result request_yap_negociation_parser_feed(struct yap_negoc
             return YAP_NEGOCIATION_ERROR;
         }
     case YAP_NEGOCIATION_PARSER_USERNAME:
-        if (byte == LIMITER) {
-            parser->state = YAP_NEGOCIATION_PARSER_PASSWORD;
-            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_DONE");
+        if (byte >= MAX_USERNAME) {
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_TOO_BIG");
+            return YAP_NEGOCIATION_ERROR;
+        }
+        if (parser->username_len == 0) {
+            parser->username_len = byte;
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_LEN %d", parser->username_len);
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+        else if (parser->username_current < parser->username_len) {
+            parser->username[parser->username_current++] = byte;
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_BYTE %c", byte);
             return YAP_NEGOCIATION_INCOMPLETE;
         }
         else {
-            parser->username[parser->username_len] = byte;
-            parser->username_len++;
-            log_debug("YAP_NEGOCIATION_PARSER_USERNAME_INCOMPLETE");
+            parser->username[parser->username_current] = '\0';
+            parser->state = YAP_NEGOCIATION_PARSER_PASSWORD;
+            log_debug("YAP_NEGOCIATION_PARSER_USERNAME %s", parser->username);
             return YAP_NEGOCIATION_INCOMPLETE;
         }
     case YAP_NEGOCIATION_PARSER_PASSWORD:
-        if (byte == LIMITER) {
-            parser->state = YAP_NEGOCIATION_PARSER_DONE;
-            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_DONE");
-            return YAP_NEGOCIATION_SUCCESS;
+        if (byte >= MAX_PASSWORD) {
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_TOO_BIG");
+            return YAP_NEGOCIATION_ERROR;
+        }
+        if (parser->password_len == 0) {
+            parser->password_len = byte;
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_LEN %d", parser->password_len);
+            return YAP_NEGOCIATION_INCOMPLETE;
+        }
+        else if (parser->password_current < parser->password_len) {
+            parser->password[parser->password_current++] = byte;
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_BYTE %c", byte);
+            return YAP_NEGOCIATION_INCOMPLETE;
         }
         else {
-            parser->password[parser->password_len] = byte;
-            parser->password_len++;
-            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD_INCOMPLETE");
-            return YAP_NEGOCIATION_INCOMPLETE;
+            parser->password[parser->password_current] = '\0';
+            parser->state = YAP_NEGOCIATION_PARSER_DONE;
+            log_debug("YAP_NEGOCIATION_PARSER_PASSWORD %s", parser->password);
+            return YAP_NEGOCIATION_SUCCESS;
         }
     case YAP_NEGOCIATION_PARSER_DONE:
         log_debug("YAP_NEGOCIATION_PARSER_DONE");

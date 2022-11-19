@@ -144,6 +144,8 @@ void yap_parser_reset(struct yap_parser* parser) {
     parser->metric = 0;
     parser->username_length = 0;
     parser->password_length = 0;
+    parser->username_current = 0;
+    parser->password_current = 0;
     parser->config = 0;
     parser->config_value = 0;
     memset(parser->username, 0, MAX_USERNAME_LENGTH);
