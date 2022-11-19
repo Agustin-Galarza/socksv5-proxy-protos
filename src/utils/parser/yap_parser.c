@@ -1,6 +1,7 @@
 #include "utils/parser/yap_parser.h"
 #include <string.h>
 #include "utils/logger/logger.h"
+#include <netdb.h>
 
 // Inicializa el parser
 struct yap_parser* yap_parser_init() {
@@ -114,12 +115,17 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         if (yap_parser_is_valid_config(byte)) {
             parser->config = byte;
             log_debug("Config correcta %d", byte);
-            return YAP_PARSER_FINISH;
+            return YAP_PARSER_NOT_FINISHED;
         }
         else {
             log_error("Configuracion incorrecta");
             return YAP_PARSER_ERROR;
         }
+        break;
+    case YAP_STATE_CONFIG_VALUE:
+        parser->config_value = ntohs(byte);
+        log_debug("Config value correcta %d", byte);
+        return YAP_PARSER_FINISH;
         break;
 
     default:
