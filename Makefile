@@ -47,7 +47,7 @@ ifdef prod
 OPT_FLAGS := -O3 # optimize (remove for debugging) 
 endif
 
-CFLAGS := -std=c11 -g -Wall -Wextra -pedantic -pedantic-errors -fno-exceptions -Wno-implicit-fallthrough
+CFLAGS := -std=c11 -g -Wall -Wextra -pedantic -pedantic-errors -fno-exceptions -Wno-implicit-fallthrough -fms-extensions
 CFLAGS += $(OPT_FLAGS)
 CFLAGS += $(NO_UNUSED_FLAGS)
 CFLAGS += $(ASAN_FLAGS)
@@ -93,7 +93,7 @@ $(TARGET_DIR)/$(CLIENT_COMPILE_TARGET): $(CL_OBJS) $(UT_OBJS)
 	$(CC) $(LDFLAGS) $(CL_LDFLAGS) $(CL_OBJS) $(UT_OBJS) -o $@
 	@chmod +x $<
 
-$(TEST_COMPILE_TARGETS): $(TEST_OBJS) $(UT_OBJS)
+$(TEST_COMPILE_TARGETS):$(TARGET_DIR)/$(TEST_DIR)/%: $(BUILD_DIR)/$(TEST_DIR)/%.o $(UT_OBJS)
 	@echo "test target"
 	@echo $@
 	@echo $<

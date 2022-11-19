@@ -6,6 +6,7 @@
 
 struct pop3_parser* pop3_parser_init() {
     struct pop3_parser* parser = malloc(sizeof(struct pop3_parser));
+    parser->buff = malloc(sizeof(struct buffer));
     pop3_parser_reset(parser);
     return parser;
 }
@@ -26,6 +27,9 @@ void pop3_parser_free(struct pop3_parser* parser) {
     }
     if (parser->pass != NULL) {
         free(parser->pass);
+    }
+    if (parser->buff != NULL) {
+        free(parser->buff);
     }
     free(parser);
 }
