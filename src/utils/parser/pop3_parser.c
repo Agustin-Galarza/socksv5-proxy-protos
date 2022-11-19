@@ -35,7 +35,7 @@ int pop3_parser_has_error(struct pop3_parser* parser) {
 }
 
 
-enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
+enum pop3_state pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
     switch (parser->state) {
     case POP3_STATE_INIT:
         if (POP_U(c)) {
@@ -78,19 +78,8 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
         }
         break;
     case POP3_STATE_USER_R:
-        if (CRLF_1(c)) {
-            parser->state = POP3_STATE_USER_CRLF;
-            log_debug("Estado correcto");
-        }
-        else {
-            parser->state = POP3_ERROR;
-            log_debug("Estado incorrecto");
-        }
-        break;
-    case POP3_STATE_USER_CRLF:
-        if (CRLF_2(c)) {
+        if (SPACE(c)) {
             parser->state = POP3_STATE_USER_SNIF;
-            buffer_reset(parser->buff);
             log_debug("Estado correcto");
         }
         else {
@@ -99,7 +88,7 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
         }
         break;
     case POP3_STATE_USER_SNIF:
-        if (!CRLF_2(c)) {
+        if (!CRLF_1(c)) {
             buffer_write(parser->buff, c);
             parser->user_len++;
             log_debug("Estado correcto");
@@ -108,8 +97,18 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
             parser->user = malloc(sizeof(char) * (parser->user_len + 1));
             memcpy(parser->user, parser->buff->data, parser->user_len);
             parser->user[parser->user_len] = '\0';
+            parser->state = POP3_STATE_USER_CRLF;
+            log_debug("Estado correcto");
+        }
+        break;
+    case POP3_STATE_USER_CRLF:
+        if (CRLF_2(c)) {
             parser->state = POP3_STATE_USER_OK;
             log_debug("Estado correcto");
+        }
+        else {
+            parser->state = POP3_ERROR;
+            log_debug("Estado incorrecto");
         }
         break;
     case POP3_STATE_USER_OK:
@@ -153,19 +152,8 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
         }
         break;
     case POP3_STATE_PASS_S_2:
-        if (CRLF_1(c)) {
-            parser->state = POP3_STATE_PASS_CRLF;
-            log_debug("Estado correcto");
-        }
-        else {
-            parser->state = POP3_ERROR;
-            log_debug("Estado incorrecto");
-        }
-        break;
-    case POP3_STATE_PASS_CRLF:
-        if (CRLF_2(c)) {
+        if (SPACE(c)) {
             parser->state = POP3_STATE_PASS_SNIF;
-            buffer_reset(parser->buff);
             log_debug("Estado correcto");
         }
         else {
@@ -174,7 +162,7 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
         }
         break;
     case POP3_STATE_PASS_SNIF:
-        if (!CRLF_2(c)) {
+        if (!CRLF_1(c)) {
             buffer_write(parser->buff, c);
             parser->pass_len++;
             log_debug("Estado correcto");
@@ -183,10 +171,22 @@ enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c) {
             parser->pass = malloc(sizeof(char) * (parser->pass_len + 1));
             memcpy(parser->pass, parser->buff->data, parser->pass_len);
             parser->pass[parser->pass_len] = '\0';
-            parser->state = POP3_STATE_PASS_OK;
+            parser->state = POP3_STATE_PASS_CRLF;
             log_debug("Estado correcto");
         }
         break;
+    case POP3_STATE_PASS_CRLF:
+        if (CRLF_2(c)) {
+            parser->state = POP3_STATE_PASS_OK;
+            buffer_reset(parser->buff);
+            log_debug("Estado correcto");
+        }
+        else {
+            parser->state = POP3_ERROR;
+            log_debug("Estado incorrecto");
+        }
+        break;
+
     case POP3_STATE_PASS_OK:
         parser->state = POP3_STATE_DONE;
         break;
@@ -204,12 +204,9 @@ enum pop3_results pop3_parser_is_finished(struct pop3_parser* parser) {
 enum pop3_results pop3_parser_consume(buffer* buff, struct pop3_parser* parser) {
     while (buffer_can_read(buff)) {
         uint8_t c = buffer_read(buff);
-        enum pop3_state st = pop3_parser_feed(parser, c);
-        if (st == POP3_ERROR) {
-            return POP3_ERROR;
-        }
+        pop3_parser_feed(parser, c);
         if (pop3_parser_has_error(parser)) {
-            return POP3_ERROR;
+            return POP3_FINISH_ERROR;
         }
         if (pop3_parser_is_finished(parser) == POP3_FINISH_OK) {
             break;

@@ -17,7 +17,7 @@
 
 #define CRLF_1(x) ((char) x == '\r')
 #define CRLF_2(x) ((char) x == '\n')
-
+#define SPACE(x) ((char) x == ' ')
 
 // Estados finales del parser
 enum pop3_results {
@@ -64,7 +64,7 @@ struct pop3_parser* pop3_parser_init();
 void pop3_parser_free(struct pop3_parser* parser);
 
 // Parsea un byte
-enum pop3_results pop3_parser_feed(struct pop3_parser* parser, uint8_t c);
+enum pop3_state pop3_parser_feed(struct pop3_parser* parser, uint8_t c);
 
 // Parsea un buffer
 enum pop3_results pop3_parser_consume(buffer* buff, struct pop3_parser* parser);
