@@ -1,6 +1,5 @@
 /**
  * TODO:
- * - Manejar cierre con sigint
  * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
  */
 #include <errno.h>
@@ -17,6 +16,9 @@
 #include "utils/parser/negotiation.h"
 #include "utils/parser/request.h"
 #include "utils/stm.h"
+#include "utils/parser/pop3_parser.h"
+#include "utils/user_list.h"
+
 
  /*********************************
  |          Definitions          |
@@ -43,6 +45,8 @@
 #define SHTDWN_READ(duplex) (duplex & ~OP_READ)
 #define SHTDWN_WRITE(duplex) (duplex & ~OP_WRITE)
 
+#define POP3_PORT 110
+
 enum connection_state {
     NEGOTIATING_REQ = 0,
     NEGOTIATING_RES,
@@ -50,6 +54,7 @@ enum connection_state {
     RESOLVE_ADDRESS,
     CONNECTING,
     ADDRESS_RES,
+    SNIFF,
     COPY,
     CONNECTION_DONE,
     CONNECTION_ERROR
@@ -139,6 +144,11 @@ struct copy_struct {
     char* to_str;
 };
 
+struct sniff_struct {
+    struct copy_struct;
+    struct pop3_parser* parser;
+};
+
 /**
  * Representación de una conexión del Proxy.
  * Toda la información se maneja desde el cliente
@@ -159,6 +169,7 @@ struct client_data
     union {
         struct negotiation_struct negotiation;
         struct address_request_struct addr_req;
+        struct sniff_struct sniff;
         struct copy_struct copy;
     } client;
 
@@ -174,6 +185,7 @@ struct client_data
 
     union {
         struct connecting_struct connecting;
+        struct sniff_struct sniff;
         struct copy_struct copy;
     } origin;
 
@@ -206,6 +218,10 @@ struct client_data
 */
 struct client_data** clients;
 
+/**
+ * Lista de usuarios sniffeados por el servidor
+ */
+static user_list_t* sniffed_users;
 /**
  * Hint sobre el tipo de conexión que vamos a pedir para resolver por DNS la request del cliente
  */
@@ -302,11 +318,13 @@ static void address_res_init(const unsigned state, struct selector_key* key);
 static void address_res_close(const unsigned state, struct selector_key* key);
 static unsigned write_address_res(struct selector_key* key);
 
-// COPY
-static void copy_init(const unsigned state, struct selector_key* key);
-static void copy_close(const unsigned state, struct selector_key* key);
+// COPY - SNIFF
+static void sniff_n_copy_init(const unsigned state, struct selector_key* key);
+static void sniff_n_copy_close(const unsigned state, struct selector_key* key);
 static unsigned copy_write(struct selector_key* key);
 static unsigned copy_read(struct selector_key* key);
+static unsigned sniff_write(struct selector_key* key);
+static unsigned sniff_read(struct selector_key* key);
 
 // DONE
 static void close_connection_normally(const unsigned state, struct selector_key* key);
@@ -319,6 +337,8 @@ uint8_t choose_socks5_method(uint8_t methods[2]);
 void set_interests(struct selector_key* key, struct copy_struct* ep);
 
 struct copy_struct* get_copy_struct_ptr(struct selector_key* key);
+
+struct sniff_struct* get_sniff_struct_ptr(struct selector_key* key);
 
 /*****************************
 |          Estados          |
@@ -356,9 +376,15 @@ static const struct state_definition socks5_states[] = {
         .on_departure = address_res_close,
         .on_write_ready = write_address_res
     },{
+        .state = SNIFF,
+        .on_arrival = sniff_n_copy_init,
+        .on_departure = sniff_n_copy_close,
+        .on_read_ready = sniff_read,
+        .on_write_ready = sniff_write,
+    },{
         .state = COPY,
-        .on_arrival = copy_init,
-        .on_departure = copy_close,
+        .on_arrival = sniff_n_copy_init,
+        .on_departure = sniff_n_copy_close,
         .on_read_ready = copy_read,
         .on_write_ready = copy_write,
     },
@@ -393,6 +419,7 @@ static const struct state_definition socks5_states[] = {
 
 bool socks5_init_server() {
     clients = calloc(MAX_CLIENTS_AMOUNT, sizeof(struct client_data*));
+    sniffed_users = user_list_init(MAX_CLIENTS_AMOUNT);
     return false;
 }
 
@@ -408,6 +435,8 @@ void socks5_close_server() {
         free(clients);
         clients = NULL;
     }
+    user_list_free(sniffed_users);
+    sniffed_users = NULL;
 }
 
 const struct fd_handler* get_socks5_server_handlers() {
@@ -883,7 +912,7 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
 
         addr_len = sizeof(struct sockaddr_in6);
         addr_info->ai_addrlen = addr_len;
-        addr_in6 = malloc(addr_len); // TODO: free this
+        addr_in6 = malloc(addr_len);
         memset(addr_in6, 0, addr_len);
         addr_in6->sin6_family = AF_INET6;
         addr_in6->sin6_port = (in_port_t)*client->parser->port;
@@ -1112,16 +1141,89 @@ static unsigned write_address_res(struct selector_key* key) {
     buffer_read_adv(client->read_buffer, bytes_sent);
 
     if (bytes_sent == bytes_to_send)
-        return COPY;
+        return htons(JOIN_PORT_ARRAY(client->parser->port)) == POP3_PORT ? SNIFF : COPY;
 
     return ADDRESS_RES;
 }
 
-static void copy_init(const unsigned state, struct selector_key* key) {
+static unsigned sniff_write(struct selector_key* key) {
+    struct sniff_struct* source = get_sniff_struct_ptr(key);
+
+    size_t max_read = 0;
+    uint8_t* buff_raw = buffer_read_ptr(source->read_buffer, &max_read);
+
+    int send_status = send(*source->fd, buff_raw, max_read, SEND_FLAGS);
+
+    if (send_status == -1) {
+        log_error("Could not write into %s", source->to_str);
+        return CONNECTION_ERROR;
+    }
+
+    buffer_read_adv(source->read_buffer, send_status);
+
+    set_interests(key, (struct copy_struct*)source);
+    set_interests(key, (struct copy_struct*)source->target);
+    return SNIFF;
+}
+
+static unsigned sniff_read(struct selector_key* key) {
+    struct sniff_struct* source = get_sniff_struct_ptr(key);
+
+    size_t max_write;
+    uint8_t* source_buff_raw = buffer_write_ptr(source->write_buffer, &max_write);
+
+    int ammount_read = read(*source->fd, source_buff_raw, max_write);
+    switch (ammount_read) {
+    case -1:
+        log_error("Could not read from : %s", source->to_str, strerror(errno));
+        return CONNECTION_ERROR;
+    case 0:
+        // Cuando un socket manda EOF, deja de enviar bytes
+        // si ya estaba cerrado el otro canal, se cierra la conexión
+        if (!CAN_WRITE(source->duplex))
+            return CONNECTION_DONE;
+        errno = 0;
+        source->duplex = SHTDWN_READ(source->duplex);
+        source->target->duplex = SHTDWN_WRITE(source->target->duplex);
+        if (shutdown(*source->fd, SHUT_RD)) {
+            log_error("Could not shutdown %s: %s", source->to_str, strerror(errno));
+            if (shutdown(*source->target->fd, SHUT_WR)) {
+                log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
+            }
+            return CONNECTION_ERROR;
+        }
+
+        break;
+    default:
+        buffer_write_adv(source->write_buffer, ammount_read);
+        if (source->parser == NULL) break;
+
+        enum pop3_results sniff_results =
+            pop3_parser_consume(source->write_buffer, source->parser);
+
+        switch (sniff_results) {
+        case POP3_FINISH_ERROR:
+            pop3_parser_reset(source->parser);
+            break;
+        case POP3_FINISH_OK:
+            // se detectó usuario y contraseña, guardar
+            user_list_add(sniffed_users, source->parser->user, source->parser->pass);
+            log_debug("Sniffed user (%s:%s)", source->parser->user, source->parser->pass);
+            break;
+        }
+        break;
+    }
+    set_interests(key, (struct copy_struct*)source);
+    set_interests(key, (struct copy_struct*)source->target);
+    return SNIFF;
+}
+
+static void sniff_n_copy_init(const unsigned state, struct selector_key* key) {
+    if (state == SNIFF) {
+        log_debug("Entering sniffing mode");
+    }
     struct copy_struct* client = &GET_DATA(key)->client.copy;
     struct copy_struct* origin = &GET_DATA(key)->origin.copy;
-
-    // fd_selector selector = key->s;
 
     buffer_reset(GET_DATA(key)->read_buffer);
     buffer_reset(GET_DATA(key)->write_buffer);
@@ -1132,6 +1234,9 @@ static void copy_init(const unsigned state, struct selector_key* key) {
     client->read_buffer = GET_DATA(key)->read_buffer;
     client->duplex = OP_READ | OP_WRITE;
     client->to_str = GET_DATA(key)->client_str;
+    if (state == SNIFF)
+        ((struct sniff_struct*)client)->parser = pop3_parser_init();
+
 
     origin->fd = &GET_DATA(key)->origin_fd;
     origin->target = client;
@@ -1139,12 +1244,17 @@ static void copy_init(const unsigned state, struct selector_key* key) {
     origin->read_buffer = GET_DATA(key)->write_buffer;
     origin->duplex = OP_READ | OP_WRITE;
     origin->to_str = GET_DATA(key)->origin_str;
+    // seteamos el parser de origin en NULL para identificarlo del cliente
+    if (state == SNIFF)
+        ((struct sniff_struct*)origin)->parser = NULL;
 
-    selector_set_interest(key->s, *client->fd, OP_READ);
-    selector_set_interest(key->s, *origin->fd, OP_READ);
+    // selector_set_interest(key->s, *client->fd, OP_READ);
+    // selector_set_interest(key->s, *origin->fd, OP_READ);
+    set_interests(key, client);
+    set_interests(key, origin);
 }
 
-static void copy_close(const unsigned state, struct selector_key* key) {
+static void sniff_n_copy_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
         close_connection_error(CONNECTION_ERROR, key);
         return;
@@ -1269,4 +1379,8 @@ void set_interests(struct selector_key* key, struct copy_struct* ep) {
 
 struct copy_struct* get_copy_struct_ptr(struct selector_key* key) {
     return key->fd == GET_DATA(key)->client_fd ? &GET_DATA(key)->client.copy : &GET_DATA(key)->origin.copy;
+}
+
+struct sniff_struct* get_sniff_struct_ptr(struct selector_key* key) {
+    return key->fd == GET_DATA(key)->client_fd ? &GET_DATA(key)->client.sniff : &GET_DATA(key)->origin.sniff;
 }
