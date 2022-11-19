@@ -39,6 +39,7 @@ enum yap_states {
     YAP_STATE_ADD_USER,
     YAP_STATE_ADD_PASS,
     YAP_STATE_REMOVE_USER,
+    YAP_STATE_REMOVE_PASS,
     YAP_STATE_CONFIG,
     YAP_STATE_CONFIG_VALUE
 };
@@ -58,8 +59,10 @@ struct yap_parser {
     // ADD_USER and REMOVE_USER
     char username[MAX_USERNAME_LENGTH];
     uint8_t username_length;
+    uint8_t username_current;
     char password[MAX_PASSWORD_LENGTH];
     uint8_t password_length;
+    uint8_t password_current;
     // CONFIG
     uint8_t config;
     uint16_t config_value;

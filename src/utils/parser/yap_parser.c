@@ -39,11 +39,11 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
             default:
                 break;
             }
-            log_debug("Comando correcto");
+            log_debug("Comando correcto %d", byte);
             return YAP_PARSER_NOT_FINISHED;
         }
         else {
-            log_error("Comando incorrecto");
+            log_error("Comando incorrecto %d", byte);
             return YAP_PARSER_ERROR;
         }
         break;
@@ -53,56 +53,67 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
             return YAP_PARSER_FINISH;
         }
         else {
-            log_error("Metrica incorrecta");
+            log_error("Metrica incorrecta %d", byte);
             return YAP_PARSER_ERROR;
         }
         break;
     case YAP_STATE_ADD_USER:
-        if (byte == 0) {
+        if (parser->username_length == 0) {
+            parser->username_length = byte;
+        }
+        else if (parser->username_current < parser->username_length) {
+            parser->username[parser->username_current++] = byte;
+        }
+        else if (parser->username_current == parser->username_length) {
             parser->state = YAP_STATE_ADD_PASS;
-            return YAP_PARSER_NOT_FINISHED;
-        }
-        else if (parser->username_length < MAX_USERNAME_LENGTH) {
-            parser->username[parser->username_length] = byte;
-            parser->username_length++;
-            return YAP_PARSER_NOT_FINISHED;
-        }
-        else {
-            log_error("Username demasiado largo");
-            return YAP_PARSER_ERROR;
+            log_debug("Username completa: %s", parser->username);
+            return YAP_PARSER_FINISH;
         }
         break;
     case YAP_STATE_ADD_PASS:
-        if (byte == 0) {
-            return YAP_PARSER_FINISH;
-        }
-        else if (parser->password_length < MAX_PASSWORD_LENGTH) {
-            parser->password[parser->password_length] = byte;
-            parser->password_length++;
+        if (parser->password_length == 0) {
+            parser->password_length = byte;
             return YAP_PARSER_NOT_FINISHED;
         }
-        else {
-            log_error("Password demasiado larga");
-            return YAP_PARSER_ERROR;
+        else if (parser->password_current < parser->password_length) {
+            parser->password[parser->password_current++] = byte;
+            return YAP_PARSER_NOT_FINISHED;
+        }
+        else if (parser->password_current == parser->password_length) {
+            log_debug("Password completa: %s", parser->password);
+            return YAP_PARSER_FINISH;
         }
         break;
     case YAP_STATE_REMOVE_USER:
-        if (byte == 0) {
+        if (parser->username_length == 0) {
+            parser->username_length = byte;
+        }
+        else if (parser->username_current < parser->username_length) {
+            parser->username[parser->username_current++] = byte;
+        }
+        else if (parser->username_current == parser->username_length) {
+            log_debug("Username completa: %s", parser->username);
             return YAP_PARSER_FINISH;
         }
-        else if (parser->username_length < MAX_USERNAME_LENGTH) {
-            parser->username[parser->username_length] = byte;
-            parser->username_length++;
+        break;
+    case YAP_STATE_REMOVE_PASS:
+        if (parser->password_length == 0) {
+            parser->password_length = byte;
             return YAP_PARSER_NOT_FINISHED;
         }
-        else {
-            log_error("Username demasiado largo");
-            return YAP_PARSER_ERROR;
+        else if (parser->password_current < parser->password_length) {
+            parser->password[parser->password_current++] = byte;
+            return YAP_PARSER_NOT_FINISHED;
+        }
+        else if (parser->password_current == parser->password_length) {
+            log_debug("Password completa: %s", parser->password);
+            return YAP_PARSER_FINISH;
         }
         break;
     case YAP_STATE_CONFIG:
         if (yap_parser_is_valid_config(byte)) {
             parser->config = byte;
+            log_debug("Config correcta %d", byte);
             return YAP_PARSER_FINISH;
         }
         else {
