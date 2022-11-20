@@ -339,6 +339,7 @@ void handle_sig_kill(int signum) {
     log_warning(log_msg);
 
     socks5_close_server();
+    admin_server_close();
 
     server_active = false;
 }

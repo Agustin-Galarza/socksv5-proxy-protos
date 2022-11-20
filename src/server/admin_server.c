@@ -225,7 +225,7 @@ bool admin_server_init(user_list_t* initial_users) {
 }
 
 void admin_server_close() {
-    server_status = ADMIN_SERVER_STATE_ERROR;
+    server_status = ADMIN_SERVER_STATUS_ERROR;
     user_list_free(allowed_users);
     for (int i = 0; i < admin_server_data.max_clients; i++) {
         if (admins[i] != NULL) {
@@ -324,7 +324,8 @@ void admin_server_handle_read(struct selector_key* key) {
 
         if (new_admin > 0) {
             struct admin_data* admin_data = admin_data_new(new_admin, selector);
-            admin_server_data.client_count++;
+            admins[admin_server_data.client_count++] = admin_data;
+
 
             if (selector_register(selector, new_admin, &admin_handlers, OP_READ, admin_data) != SELECTOR_SUCCESS) {
                 log_error("Could not register admin");
@@ -356,6 +357,9 @@ authentication_req_init(const unsigned int state, struct selector_key* key) {
 
 static void
 authentication_req_close(const unsigned int state, struct selector_key* key) {
+    if (server_status == ADMIN_SERVER_STATUS_ERROR) {
+        close_connection(ADMIN_SERVER_STATE_ERROR, key);
+    }
 }
 
 static unsigned read_authentication_request(struct selector_key* key) {
@@ -438,6 +442,10 @@ authentication_res_close(const unsigned int state, struct selector_key* key) {
     log_info("Admin Authorized: %s", admin->admin_str);
 
     selector_set_interest(admin->selector, admin->admin_fd, OP_READ);
+
+    if (server_status == ADMIN_SERVER_STATUS_ERROR) {
+        close_connection(ADMIN_SERVER_STATE_ERROR, key);
+    }
 }
 static unsigned write_authentication_response(struct selector_key* key) {
     errno = 0;
@@ -467,7 +475,9 @@ cmd_req_init(const unsigned int state, struct selector_key* key) {
 }
 static void
 cmd_req_close(const unsigned int state, struct selector_key* key) {
-
+    if (server_status == ADMIN_SERVER_STATUS_ERROR) {
+        close_connection(ADMIN_SERVER_STATE_ERROR, key);
+    }
 }
 static unsigned read_cmd_request(struct selector_key* key) {
     errno = 0;
@@ -585,8 +595,9 @@ cmd_res_init(const unsigned int state, struct selector_key* key) {
     uint8_t* buff_raw = buffer_write_ptr(admin->read_buffer, &max_write);
 
     memcpy(buff_raw, payload.data, payload.size);
-    payload.size = 0;
     buffer_write_adv(admin->read_buffer, payload.size);
+
+    payload.size = 0;
 
 cmd_res_init_end:
     selector_set_interest(admin->selector, admin->admin_fd, OP_WRITE);
@@ -598,6 +609,10 @@ cmd_res_close(const unsigned int state, struct selector_key* key) {
     yap_parser_reset(admin->cmd_parser);
 
     selector_set_interest(admin->selector, admin->admin_fd, OP_READ);
+
+    if (server_status == ADMIN_SERVER_STATUS_ERROR) {
+        close_connection(ADMIN_SERVER_STATE_ERROR, key);
+    }
 }
 static unsigned write_cmd_response(struct selector_key* key) {
     errno = 0;
@@ -628,7 +643,7 @@ close_connection(const unsigned int state, struct selector_key* key) {
         log_error("There was an error on execution for %s", admin->admin_str);
     }
     log_info("Closing connection of %s", admin->admin_str);
-    if (server_status != ADMIN_SERVER_STATE_ERROR) {
+    if (server_status != ADMIN_SERVER_STATUS_ERROR) {
         if (selector_unregister_fd(admin->selector, admin->admin_fd) != SELECTOR_SUCCESS) {
             log_error("Could not unregister admin %s", admin->admin_str);
         }

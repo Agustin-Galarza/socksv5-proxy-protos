@@ -1,7 +1,6 @@
 /**
  * TODO:
  * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
- * - Add a timeout
  */
 #include <errno.h>
 #include <string.h>
