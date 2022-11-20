@@ -18,7 +18,8 @@
 #include "utils/stm.h"
 #include "utils/parser/pop3_parser.h"
 #include "utils/user_list.h"
-
+#include "server/admin_server.h"
+#include "utils/parser/auth_negociation.h"
 
  /*********************************
  |          Definitions          |
@@ -29,6 +30,7 @@
 #define CLIENT_BUFFER_SIZE 1024
 
 #define SOCKS_VER_BYTE 0x5
+#define SOCKS_AUTH_VER_BYTE 0x01
 
 #define SOCKS_RSV_BYTE 0x00
 
@@ -45,9 +47,13 @@
 
 #define POP3_PORT 110
 
+#define MAX_NULL_TERMINATED_STRING_SIZE 256
+
 enum connection_state {
     NEGOTIATING_REQ = 0,
     NEGOTIATING_RES,
+    AUTHENTICATION_READ,
+    AUTHENTICATION_WRITE,
     ADDRESS_REQ,
     RESOLVE_ADDRESS,
     CONNECTING,
@@ -69,6 +75,11 @@ enum socks5_reply_status {
     COMMAND_NOT_SUPPORTED,
 };
 
+enum socks5_auth_reply_status {
+    SOCKS5_AUTH_SUCCESS = 0,
+    SOCKS5_AUTH_FAILURE,
+};
+
 enum socks5_client_status {
     ACTIVE = 0,
     CLOSING,
@@ -83,6 +94,16 @@ struct negotiation_struct {
     uint8_t selected_method;
     char* to_str;
 };
+
+struct auth_struct {
+    socket_descriptor* fd;
+    struct buffer* write_buffer;
+    struct buffer* read_buffer;
+    struct auth_negociation_parser* parser;
+    enum socks5_auth_reply_status status;
+    char* to_str;
+};
+
 
 struct domainname_hint {
     struct addrinfo* addrinfo_hint;
@@ -166,6 +187,7 @@ struct client_data
 
     union {
         struct negotiation_struct negotiation;
+        struct auth_struct auth;
         struct address_request_struct addr_req;
         struct sniff_struct sniff;
         struct copy_struct copy;
@@ -295,6 +317,16 @@ static void negotiating_res_init(const unsigned state, struct selector_key* key)
 static void negotiating_res_close(const unsigned state, struct selector_key* key);
 static unsigned write_hello(struct selector_key* key);
 
+// AUTHENTICATION_READ
+static void authentication_read_init(const unsigned state, struct selector_key* key);
+static void authentication_read_close(const unsigned state, struct selector_key* key);
+static unsigned read_authentication(struct selector_key* key);
+
+// AUTHENTICATION WRITE
+static void authentication_write_init(const unsigned state, struct selector_key* key);
+static void authentication_write_close(const unsigned state, struct selector_key* key);
+static unsigned write_authentication(struct selector_key* key);
+
 // ADDRESS_REQ
 static void address_req_init(const unsigned state, struct selector_key* key);
 static void address_req_close(const unsigned state, struct selector_key* key);
@@ -350,6 +382,16 @@ static const struct state_definition socks5_states[] = {
         .on_arrival = negotiating_res_init,
         .on_departure = negotiating_res_close,
         .on_write_ready = write_hello,
+    },{
+        .state = AUTHENTICATION_READ,
+        .on_arrival = authentication_read_init,
+        .on_departure = authentication_read_close,
+        .on_read_ready = read_authentication,
+    },{
+        .state = AUTHENTICATION_WRITE,
+        .on_arrival = authentication_write_init,
+        .on_departure = authentication_write_close,
+        .on_write_ready = write_authentication,
     },{
         .state = ADDRESS_REQ,
         .on_arrival = address_req_init,
@@ -696,7 +738,9 @@ negotiating_req_init(const unsigned state, struct selector_key* key) {
 
 static void
 negotiating_req_close(const unsigned state, struct selector_key* key) {
+    struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
     if (GET_DATA(key)->status == CLOSING) {
+        negotiation_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -704,7 +748,6 @@ negotiating_req_close(const unsigned state, struct selector_key* key) {
 
 static unsigned
 read_hello(struct selector_key* key) {
-    // Todo: quizás checkear si el fd es del cliente
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
 
     if (client->parser == NULL) {
@@ -713,6 +756,7 @@ read_hello(struct selector_key* key) {
         return CONNECTION_ERROR;
     }
 
+    //Todo: fix
     int bytes_read = read(key->fd, client->write_buffer->data, CLIENT_BUFFER_SIZE);
 
     if (bytes_read == 0)
@@ -754,9 +798,9 @@ negotiating_res_init(const unsigned state, struct selector_key* key) {
     // Elegir el método de entre los que nos dió el usuario
     client->selected_method = choose_socks5_method(client->parser->methods);
 
-    buffer_reset(client->write_buffer);
-    buffer_write(client->write_buffer, SOCKS_VER_BYTE);
-    buffer_write(client->write_buffer, client->selected_method);
+    buffer_reset(client->read_buffer);
+    buffer_write(client->read_buffer, SOCKS_VER_BYTE);
+    buffer_write(client->read_buffer, client->selected_method);
 
     selector_set_interest_key(key, OP_WRITE);
 }
@@ -766,36 +810,171 @@ static unsigned write_hello(struct selector_key* key) {
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
 
     size_t bytes_to_send;
-    GET_DATA(key)->read_buff_raw = buffer_read_ptr(client->write_buffer, &bytes_to_send);
+    uint8_t* buff_raw = buffer_read_ptr(client->read_buffer, &bytes_to_send);
 
-    int send_status = send(key->fd, GET_DATA(key)->read_buff_raw, bytes_to_send, SEND_FLAGS);
+    int send_status = send(key->fd, buff_raw, bytes_to_send, SEND_FLAGS);
 
     if (send_status < 0) {
         log_error("Could not send hello response to %s [Reason:%s]", client->to_str, strerror(errno));
         return CONNECTION_ERROR;
     }
     size_t bytes_sent = (size_t)send_status;
-    buffer_read_adv(client->write_buffer, bytes_sent);
+    buffer_read_adv(client->read_buffer, bytes_sent);
 
-    if (bytes_sent == bytes_to_send)
-        return client->selected_method == NO_ACCEPTABLE_METHODS ? CONNECTION_ERROR : ADDRESS_REQ;
+    if (bytes_sent == bytes_to_send) {
+        if (client->selected_method == USERNAME_PASSWORD) {
+            return AUTHENTICATION_READ;
+        }
+        if (client->selected_method == NO_AUTENTICATION) {
+            return ADDRESS_REQ;
+        }
+        return CONNECTION_ERROR;
+    }
 
     return NEGOTIATING_RES;
 }
 
 static void
 negotiating_res_close(const unsigned state, struct selector_key* key) {
-    if (GET_DATA(key)->status == CLOSING) {
-        close_connection_normally(CONNECTION_ERROR, key);
-
-        return;
-    }
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
 
     if (client->selected_method == NO_ACCEPTABLE_METHODS)
         log_error("No supported methods for client %s", client->to_str);
 
     negotiation_parser_free(client->parser);
+
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_normally(CONNECTION_ERROR, key);
+        return;
+    }
+}
+
+static void authentication_read_init(const unsigned state, struct selector_key* key) {
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+
+    client->fd = &GET_DATA(key)->client_fd;
+    client->write_buffer = GET_DATA(key)->write_buffer;
+    client->read_buffer = GET_DATA(key)->read_buffer;
+    client->parser = auth_negociation_parser_init();
+    client->status = SOCKS5_AUTH_FAILURE;
+    client->to_str = GET_DATA(key)->client_str;
+
+    log_debug("Authenticating client %s", client->to_str);
+    selector_set_interest_key(key, OP_READ);
+}
+
+static void authentication_read_close(const unsigned state, struct selector_key* key) {
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+    if (GET_DATA(key)->status == CLOSING) {
+        auth_negociation_parser_free(client->parser);
+        close_connection_normally(CONNECTION_ERROR, key);
+        return;
+    }
+}
+
+static unsigned read_authentication(struct selector_key* key) {
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+
+    int bytes_read = read(key->fd, client->write_buffer->data, CLIENT_BUFFER_SIZE);
+
+    switch (bytes_read) {
+    case -1:
+        log_error("Error while reading authentication from %s", client->to_str);
+        auth_negociation_parser_free(client->parser);
+        return CONNECTION_ERROR;
+    case 0:
+        return CONNECTION_DONE;
+    default:
+        buffer_write_adv(client->write_buffer, bytes_read);
+
+        log_debug("Reading authentication from %s", client->to_str);
+        enum auth_negociation_results  negociation_parser_result = auth_negociation_parser_consume(client->parser, client->write_buffer);
+
+        switch (negociation_parser_result) {
+        case AUTH_NEGOCIATION_PARSER_ERROR:
+            log_error("Could not parse credentails of client %s", client->to_str);
+        case AUTH_NEGOCIATION_PARSER_FINISHED:
+            return AUTHENTICATION_WRITE;
+        }
+        break;
+    }
+    return AUTHENTICATION_READ;
+}
+
+static bool authenticate_user(struct auth_negociation_parser* parser) {
+    user_list_t* allowed_users = admin_server_get_allowed_users();
+    char username[MAX_NULL_TERMINATED_STRING_SIZE];
+    char password[MAX_NULL_TERMINATED_STRING_SIZE];
+    strncpy(username, (char*)parser->username, parser->username_length);
+    username[parser->username_length] = '\0';
+    strncpy(password, (char*)parser->password, parser->password_length);
+    password[parser->password_length] = '\0';
+
+    return user_list_contains(allowed_users, username, password);
+}
+
+static void print_user(struct user_list_user* usr_ptr) {
+    log_info("- %s", usr_ptr->username);
+}
+
+static void authentication_write_init(const unsigned state, struct selector_key* key) {
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+
+    buffer_reset(client->read_buffer);
+
+    buffer_write(client->read_buffer, SOCKS_AUTH_VER_BYTE);
+    log_debug("Result: %d", client->parser->result);
+    if (client->parser->result == AUTH_NEGOCIATION_PARSER_FINISHED) {
+        client->status = authenticate_user(client->parser) ? SOCKS5_AUTH_SUCCESS : AUTH_NEGOCIATION_PARSER_ERROR;
+        if (client->status == AUTH_NEGOCIATION_PARSER_ERROR) {
+            char username[MAX_NULL_TERMINATED_STRING_SIZE];
+            strncpy(username, (char*)client->parser->username, client->parser->username_length);
+            username[client->parser->username_length] = '\0';
+            log_info("User %s is not a valid user", username);
+            log_info("Valid users:");
+            user_list_for_each(admin_server_get_allowed_users(), print_user);
+        }
+    }
+
+    buffer_write(client->read_buffer, client->status);
+    selector_set_interest_key(key, OP_WRITE);
+}
+
+static void authentication_write_close(const unsigned state, struct selector_key* key) {
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+
+    auth_negociation_parser_free(client->parser);
+
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_normally(CONNECTION_ERROR, key);
+        return;
+    }
+}
+
+static unsigned write_authentication(struct selector_key* key) {
+    errno = 0;
+    struct auth_struct* client = &GET_DATA(key)->client.auth;
+
+    size_t bytes_to_send;
+    uint8_t* buff_raw = buffer_read_ptr(client->read_buffer, &bytes_to_send);
+
+    int send_status = send(key->fd, buff_raw, bytes_to_send, SEND_FLAGS);
+
+    if (send_status < 0) {
+        log_error("Could not send auth response to %s [Reason:%s]", client->to_str, strerror(errno));
+        return CONNECTION_ERROR;
+    }
+    size_t bytes_sent = (size_t)send_status;
+    buffer_read_adv(client->read_buffer, bytes_sent);
+
+    if (bytes_sent == bytes_to_send) {
+        if (client->status == SOCKS5_AUTH_FAILURE) {
+            return CONNECTION_DONE;
+        }
+        return ADDRESS_REQ;
+    }
+
+    return AUTHENTICATION_WRITE;
 }
 
 static void address_req_init(const unsigned state, struct selector_key* key) {
@@ -816,9 +995,11 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
 }
 
 static void address_req_close(const unsigned state, struct selector_key* key) {
-    if (GET_DATA(key)->status == CLOSING) {
-        close_connection_normally(CONNECTION_ERROR, key);
+    struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
+    if (GET_DATA(key)->status == CLOSING) {
+        request_parser_free(client->parser);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 }
@@ -837,7 +1018,6 @@ static unsigned read_address_req(struct selector_key* key) {
     case -1:
         log_error("Could not read request from client %s [Reason: %s]", client->to_str, strerror(errno));
         return CONNECTION_ERROR;
-        break;
     case 0:
         return CONNECTION_DONE;
     default:
@@ -981,9 +1161,10 @@ resolve_fqdn_address_end:
 }
 
 static void resolve_addr_close(const unsigned state, struct selector_key* key) {
+    struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
     if (GET_DATA(key)->status == CLOSING) {
+        request_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
-
         return;
     }
 }
@@ -1045,9 +1226,11 @@ static void start_connection(const unsigned state, struct selector_key* key) {
 }
 
 static void connecting_close(const unsigned state, struct selector_key* key) {
-    if (GET_DATA(key)->status == CLOSING) {
-        close_connection_normally(CONNECTION_ERROR, key);
+    struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
+    if (GET_DATA(key)->status == CLOSING) {
+        request_parser_free(client->parser);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 }
@@ -1106,17 +1289,16 @@ address_res_init_end:
 }
 
 static void address_res_close(const unsigned state, struct selector_key* key) {
-    if (GET_DATA(key)->status == CLOSING) {
-        close_connection_normally(CONNECTION_ERROR, key);
-
-        return;
-    }
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
     request_parser_free(client->parser);
     freeaddrinfo(client->resolved_addresses_list->start);
     GET_DATA(key)->resolved_addresses_list.start = NULL;
     GET_DATA(key)->resolved_addresses_list.current = NULL;
+    if (GET_DATA(key)->status == CLOSING) {
+        close_connection_normally(CONNECTION_ERROR, key);
+        return;
+    }
 }
 
 static unsigned write_address_res(struct selector_key* key) {
@@ -1347,11 +1529,13 @@ static void close_connection_normally(const unsigned state, struct selector_key*
 }
 
 uint8_t choose_socks5_method(uint8_t methods[2]) {
-    //TODO: de momento no implementamos autenticación, así que sólo podemos soportar este método
     if (methods[0] == NO_ACCEPTABLE_METHODS)
         return NO_ACCEPTABLE_METHODS;
-    if (methods[0] == USERNAME_PASSWORD && methods[1] == USERNAME_PASSWORD)
-        return NO_ACCEPTABLE_METHODS;
+    if (methods[1] == NO_ACCEPTABLE_METHODS) {
+        return methods[0];
+    }
+    if (methods[0] == USERNAME_PASSWORD || methods[1] == USERNAME_PASSWORD)
+        return USERNAME_PASSWORD;
     return NO_AUTENTICATION;
 }
 

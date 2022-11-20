@@ -53,7 +53,7 @@ enum auth_negociation_results auth_negociation_parser_feed(struct auth_negociati
             parser->username_index++;
             log_debug("Username byte %d", byte);
             parser->result = AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
-            return AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
+            // return AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
         }
         if (parser->username_index == parser->username_length) {
             parser->state = AUTH_NEGOCIATION_PLEN;
@@ -82,12 +82,13 @@ enum auth_negociation_results auth_negociation_parser_feed(struct auth_negociati
             parser->password_index++;
             parser->result = AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
             log_debug("Password byte %d", byte);
-            return AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
+            // return AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
         }
         if (parser->password_index == parser->password_length) {
             parser->state = AUTH_NEGOCIATION_DONE;
+            parser->result = AUTH_NEGOCIATION_PARSER_FINISHED;
             log_debug("Password correcto %s", parser->password);
-            return AUTH_NEGOCIATION_PARSER_FINISHED;
+            return parser->result;
         }
         break;
     default:
@@ -95,6 +96,7 @@ enum auth_negociation_results auth_negociation_parser_feed(struct auth_negociati
         return AUTH_NEGOCIATION_PARSER_ERROR;
         break;
     }
+    return parser->result;
 }
 
 // Parseo un buffer
