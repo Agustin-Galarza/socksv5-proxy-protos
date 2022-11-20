@@ -4,8 +4,8 @@ Yet Another Protocol (YAP) V1.0
 
 The goal of this RFC is to describe how to interact and monitor the SOCKS5v5[RFC1928] proxy. YAP is a TCP-based binary protocol.
 YAP was developed for the subject "Protocolos de Comunicación - 2Q2022" by Group 4:
-	- Agustín Benvenuto ()
-	- Agustín Ezequiel Galarza ()
+	- Agustín Benvenuto (61448)
+	- Agustín Ezequiel Galarza (61481)
 	- Agustina Sol Ortu (61548)
 	- Milagros Cornídez (61432)
 
@@ -24,9 +24,8 @@ Data types supported:
 
 	- int:
 		- u_int8: 1 byte unsigned int
-		- u_int16: 2 byte unsigned int
-		- u_int24: 3 byte unsigned int
-		- u_int32: 4 byte unsigned int
+		- u_int16: 2 byte unsigned int, in network ordering
+		- u_int32: 4 byte unsigned int, in network ordering
 	- string:
                 +---------+-----------+
                 | STR_LEN | STR_VALUE |  
@@ -36,17 +35,17 @@ Data types supported:
 
 		Where:
 			- STR_LEN: string length, u_int8
-			- STR_VALUE: US-ASCII string, null terminated
+			- STR_VALUE: non null terminated US-ASCII string
 
 	- string list:
                 +-------------+----------+
                 | CONTENT_LEN |  VALUES  |  
                 +-------------+----------+
-                |      3      | Variable | 
+                |      4      | Variable | 
                 +-------------+----------+	
 		
 		Where:
-			- CONTENT_LEN: total size of all the list content, u_int24
+			- CONTENT_LEN: total size of all the list content, u_int32
 			- VALUES: sequence of string values, one after the other without delimiters
 
 2. Authentication
@@ -154,7 +153,8 @@ Data types supported:
 
 			Where STATUS:
 				- '0x00': OK
-				- '0x01': Invalid user
+				- '0x01': Max amount of users reached
+				- '0x02': User already exists
 				- '0x02' - '0xFF': Not used 
 
 
