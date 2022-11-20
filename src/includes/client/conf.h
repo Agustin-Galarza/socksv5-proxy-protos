@@ -1,7 +1,7 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
-#include <stdbool.h>
+#include <stdio.h>
 
 #include "tcp_client_util.h"
 
@@ -14,8 +14,7 @@
 typedef struct tcp_conf {
     const char * addr;
     const char * port;
-    const char * token;
-    int sock;
+    int version;
 } tcp_conf;
 
 /**

@@ -56,6 +56,7 @@ struct yap_parser {
     // USERS
     // METRICS
     uint8_t metric;
+    uint8_t metric_value;
     // ADD_USER and REMOVE_USER
     char username[MAX_USERNAME_LENGTH];
     uint8_t username_length;

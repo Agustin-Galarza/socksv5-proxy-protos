@@ -19,7 +19,7 @@
  *
  */
 
-enum parsing_status
+ enum parsing_status
 {
     CLNT_PARSER_WAITING = 0,
     CLNT_PARSER_PARSING,
@@ -27,9 +27,43 @@ enum parsing_status
     CLNT_PARSER_ERROR
 };
 
+enum parser_state {
+    VERSION_CHECK = 0,
+    USERNAME_RETR,
+    MSG_RETR,
+    DONE,
+    CONNECTION_ERROR
+};
+
+enum parser_error {
+    CLNT_PARSER_OK = 0,
+    CLNT_PARSER_NO_MSG,
+    CLNT_PARSER_UNDEF,
+    CLNT_PARSER_WRONG_VER,
+    CLNT_PARSER_USRNAME_TOO_LONG,
+    CLNT_PARSER_MSG_TOO_LONG,
+
+};
+
 struct parsed_msg {
     char* username;
     char* msg;
+};
+
+struct client_parser
+{
+    enum parsing_status status;
+    enum parser_state state;
+    char* msg;
+    size_t msg_len;
+    size_t curr_char;
+
+    size_t username_index;
+    size_t msg_index;
+
+    struct parsed_msg* parsed_msg;
+
+    enum parser_error error_status;
 };
 
 typedef struct client_parser client_parser;

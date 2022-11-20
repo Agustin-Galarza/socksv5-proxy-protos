@@ -12,85 +12,68 @@ int main(int argc, char* argv[]) {
     tcp_conf conf = {
         .addr = "127.0.0.1", // default address
         .port = "8080", // default port
-        .token = NULL, // default token
-        .sock = 0,
+        .version = 4, //default version
     };
+    struct sockaddr_in6 ipv6_address;
+    struct sockaddr_in ipv4_address;
+    char * addr = conf.addr;
+    int version = conf.version;
+    char * port = conf.port;
+    int tries=0;
+    uint16_t status = 0;
+    uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
+    int sock;
+    uint8_t cmd;
 
     if (!parse_conf(argc, argv, &conf)) {
         err_msg = "Error parsing configuration from arguments";
         exit_status = 1;
-        goto finally;
     }
 
-    if ((conf.sock = tcpClientSocket(conf.addr, conf.port)) < 0) {
-        err_msg = "Error creating sock with server";
-        exit_status = 1;
-        goto finally;
+    if(version == 4)
+        sock = connect_to_ipv4(&ipv4_address, port, addr);
+    else if (version == 6 )
+        sock = connect_to_ipv6(&ipv6_address, port, addr);
+    else{
+        printf("You should enter the version as: 4 for ipv4 or 6 for ipv6.\n");
+        return -1;
     }
+    
+    if(sock < 0)
+        return -1;
 
-    log_debug("----------------------------");
-    log_debug("CONNECTING TO SERVER");
 
-    if (!read_hello(conf.sock)) {
-        err_msg = "Error in server greeting";
-        exit_status = 1;
-        goto finally;
-    }
+    /*
+        read al socket
+                primer byte cantidad de bytes a leer
 
-    log_debug("----------------------------");
-    log_debug("");
+    */
 
-    log_debug("----------------------------");
-    log_debug("AUTHENTICATING WITH TOKEN");
-    if (!authenticate(conf.sock, conf.token)) {
-        err_msg = "Could not authenticate in server";
-        exit_status = 1;
-        goto finally;
-    }
 
-    log_debug("----------------------------");
-    log_debug("");
+    while(status != SUCCESS_AUTH){
 
-    int c;
-    opterr = 0, optind = 0;
-    while (-1 != (c = getopt(argc, argv, ARGUMENTS))) {
-        switch (c) {
-        case '0':
-            capabilities(conf.sock);
-            break;
-        case '1':
-            stats(conf.sock);
-            break;
-        case '2':
-            users(conf.sock);
-            break;
-        case '3':
-            buffsize(conf.sock);
-            break;
-        case '4':
-            if (*optarg == '-') {
-                err_msg = "Option -4 requires an argument.\nError parsing configuration from arguments";
-                exit_status = 1;
-                goto finally;
-            }
-            set_buffsize(conf.sock, optarg);
-            break;
-        case '5':
-            if (*optarg == '-') {
-                err_msg = "Option -5 requires an argument.\nError parsing configuration from arguments";
-                exit_status = 1;
-                goto finally;
-            }
-            add_user(conf.sock, optarg);
-            break;
+        if(ask_credentials(username, password) < 0)
+            continue;
+
+        if(tries++ >= MAX_AUTH_TRIES){
+            printf("Max number of tries reached\n");
+            return close_connection(sock);
         }
+
+        if(send_credentials(sock, username, password) < 0){
+            close_connection(sock);
+            return -1;
+        }
+
+        struct yap_parser * parser = yap_parser_init();
+
+        enum yap_result res = yap_parser_consume(cmd, parser);
+
+        print_response(cmd, parser, sock);
+
+        free(parser);
+
+        putchar('\n');
     }
-
-    log_info(success_msg);
-
-    finally:
-    if (exit_status) log_error("%s\n", err_msg);
-    if (errno) perror("");
-    close(conf.sock);
-    return exit_status;
+    return 0;
 }

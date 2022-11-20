@@ -9,306 +9,293 @@
 #include "utils/util.h"
 #include "client/tcp_client_util.h"
 
-#define MAX_ADDR_BUFFER 128
-#define BUFFSIZE MAX_RESPONSE_LEN
 
-static char response_buf[BUFFSIZE];
-static char request_buf[BUFFSIZE];
-static const char* commands_format[] = {
-    "CAP\r\n",
-    "TOKEN %s\r\n",
-    "STATS\r\n",
-    "USERS\r\n",
-    "BUFFSIZE\r\n",
-    "SET-BUFFSIZE %s\r\n", // Server parse the number
-    "ADD-USER %s\r\n",
-};
+int connect_to_ipv4(struct sockaddr_in * ipv4_address, unsigned short port , char * address){
+    int sock_fd = socket(AF_INET , SOCK_STREAM , 0);
+    if(sock_fd < 0)
+        return -1;
 
-static bool
-finished(char* buff, bool multiline);
+    memset(ipv4_address, 0, sizeof(*ipv4_address));
+    ipv4_address->sin_family = AF_INET;
+    ipv4_address->sin_port = htons(port);
+    inet_pton(AF_INET, address, &ipv4_address->sin_addr.s_addr);
 
-int tcpClientSocket(const char* host, const char* service) {
-    char addrBuffer[MAX_ADDR_BUFFER];
-    struct addrinfo addrCriteria;                   // Criteria for address match
-    memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
-    addrCriteria.ai_family = AF_UNSPEC;             // v4 or v6 is OK
-    addrCriteria.ai_socktype = SOCK_STREAM;         // Only streaming sockets
-    addrCriteria.ai_protocol = IPPROTO_TCP;         // Only TCP protocol
-
-    // Get address(es)
-    struct addrinfo* servAddr; // Holder for returned list of server addrs
-    int rtnVal = getaddrinfo(host, service, &addrCriteria, &servAddr);
-    if (rtnVal != 0) {
-        log_error("getaddrinfo() failed %s", gai_strerror(rtnVal));
+    if(connect(sock_fd, (struct sockaddr *) ipv4_address, sizeof(*ipv4_address)) < 0){
+        printf("Unable to connect\n");
+        close(sock_fd);
         return -1;
     }
 
-    int sock = -1;
-    for (struct addrinfo* addr = servAddr; addr != NULL && sock == -1; addr = addr->ai_next) {
-        // Create a reliable, stream socket using TCP
-        sock = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-        if (sock >= 0) {
-            errno = 0;
-            // Establish the connection to the server
-            if (connect(sock, addr->ai_addr, addr->ai_addrlen) != 0) {
-                log_info("can't connect to %s: %s", printAddressPort(addr, addrBuffer), strerror(errno));
-                close(sock); 	// Socket connection failed; try next address
-                sock = -1;
+    return sock_fd;
+}
+
+int connect_to_ipv6(struct sockaddr_in6 * ipv6_address, unsigned short port,char * address){
+    int sock_fd = socket(AF_INET6, SOCK_STREAM , 0);
+    if(sock_fd < 0)
+        return -1;
+
+    ipv6_address->sin6_family = AF_INET6;
+    ipv6_address->sin6_flowinfo = 0;
+    ipv6_address->sin6_scope_id = 0;
+    inet_pton(AF_INET6, address, &ipv6_address->sin6_addr);
+    ipv6_address->sin6_port= htons(port);
+
+    if(connect(sock_fd, (struct sockaddr *) ipv6_address, sizeof(*ipv6_address)) < 0){
+        printf("Unable to connect\n");
+        close(sock_fd);
+        return -1;
+    }
+
+    return sock_fd;
+}
+
+
+int ask_credentials(uint8_t * username, uint8_t * password){
+    if(ask_username(username) < 0){
+        printf("Please enter credentials with valid format\n");
+        return -1;
+    }
+
+    if(ask_password(password) < 0){
+        printf("Please enter credentials with valid format\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int ask_username(uint8_t * username){
+    printf("Enter username: ");
+    fflush(stdout);
+    if(!fgets((char *) username, CREDS_LEN, stdin))
+        return -1;
+
+    if(*username == '\n')
+        return -1;
+        
+    char * end = strchr((char *) username, '\n');
+    if(end == NULL){
+        while(getc(stdin) != '\n');
+        return -1;
+    }
+    else
+        username[end-(char *) username] = 0; 
+
+    size_t len = strlen((char *) username);
+    return len;
+}
+
+
+int ask_password(uint8_t * password){
+    printf("Enter password: ");
+    fflush(stdout);
+    if(!fgets((char *) password, CREDS_LEN, stdin))
+        return -1;
+
+    if(*password == '\n')
+        return -1;
+
+    char * end = strchr((char *) password, '\n');
+    if(end == NULL){
+        while(getc(stdin) != '\n');
+        return -1;
+    }
+    else
+        password[end-(char *) password] = 0; 
+
+    return strlen((char *) password);
+}
+
+
+int print_response(uint8_t * cmd,  struct yap_parser * parser, int socket){
+    switch(*cmd){
+        case LIST_USERS:
+            return print_user_list(socket);
+            
+        case ADD_USER:
+            return print_added_user(parser);
+
+        case REMOVE_USER:
+            return print_removed_user(parser);
+
+        case METRIC:
+            return print_metric(socket); 
+
+        case CONFIG:
+            return print_config(socket);
+        }
+    return -1;
+}
+
+int print_added_user(struct yap_parser * parser){
+    return ntohs(printf("Added user: %s\n", parser->username));
+}
+
+int print_removed_user(struct yap_parser * parser){
+    return ntohs(printf("Removed user: %s\n", parser->username));
+}
+
+
+int print_metric(int socket){
+    char * buffer = malloc(BUFF_SIZE);
+    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    if (bytes == 0)
+        return -1;
+    buffer++;
+
+    switch(htons(buffer[0])){
+        case YAP_METRIC_HISTORICAL_CONNECTIONS:
+            return ntohs(print_historical_connections(buffer));
+
+        case YAP_METRIC_CONCURRENT_CONNECTIONS:
+            return ntohs(print_concurrent_connections(buffer));
+
+        case YAP_METRIC_BYTES_SEND:
+            return ntohs(print_bytes_sent(buffer));
+    }
+    return -1;
+}
+
+int print_historical_connections(char* buffer){
+    return printf("Historical connections: %.*s\n", 2, buffer);
+}
+
+int print_concurrent_connections(char* buffer){
+    return printf("Concurrent connections: %.*s\n", 2, buffer);
+}
+
+int print_bytes_sent(char* buffer){
+    return printf("Bytes sent: %.*s\n", 2, buffer);
+}
+
+int print_user_list(int socket){
+    char * buffer = malloc(BUFF_SIZE);
+
+    size_t bytes = read(socket, buffer, BUFF_SIZE);
+
+    if (bytes == 0)
+        return -1;
+
+        
+    buffer++;
+    char * totalSize = &buffer[0];
+    int bytesAmount = atoi(totalSize);
+    buffer++;
+    for(int i=0; i<bytesAmount;){
+        char * size = &buffer[0];
+        int userSize = atoi(size);
+        buffer++;
+
+        printf("Username:\t%.*s \n", userSize, buffer);
+        i+=userSize;
+        //Avanzo la cant de chars q escribi (username)
+        buffer = (buffer + userSize);
+    }
+
+    return 0;
+}
+
+int print_config(int socket){
+    char * buffer = malloc(BUFF_SIZE);
+    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    if (bytes == 0)
+        return -1;
+    buffer++;
+
+    switch(htons(buffer[0])){
+        case YAP_CONFIG_TIMEOUTS:
+            switch (buffer[1]){
+                case 0:
+                    return ntohs(printf("Timeout was updated succesfully\n"));
+                case 1:
+                    return ntohs(printf("Could not update timeout\n"));
             }
-        }
-        else {
-            log_debug("Can't create client socket on %s", printAddressPort(addr, addrBuffer));
-        }
+
+        case YAP_CONFIG_BUFFER_SIZE:
+            switch (buffer[1]){
+                case 0:
+                    return ntohs(printf("Buffer size was updated succesfully\n"));
+                case 1:
+                    return ntohs(printf("Could not update buffer size\n"));
+            }
     }
-
-    freeaddrinfo(servAddr);
-    return sock;
-}
-
-/*
- * Returns true if answer could be read.
- * Returns false if an error occured.
- */
-static bool
-get_response(int sock, char* buff, size_t len, bool multiline) {
-    char* write_ptr = buff;
-    do {
-        uint8_t bytes_read = read(sock, write_ptr, len - (write_ptr - buff));
-        if (bytes_read <= 0) {
-            log_error("Error while reading answer");
-            return false;
-        }
-        write_ptr += bytes_read;
-        *write_ptr = '\0';
-    } while (!finished(buff, multiline));
-    return true;
+    return -1;
 }
 
 
-/*
- * buff is expected to hold a null terminated string
- */
-static bool
-finished(char* buff, bool multiline) {
-    if (buff[0] == '-') //Errors are one line
-        multiline = false;
-    return strstr(buff, (multiline) ? EOM : EOL) != NULL;
-}
+int send_credentials(int socket_fd, uint8_t * username, uint8_t * password){
+    uint8_t ulen = strlen((char *) username);
+    uint8_t plen = strlen((char *) password);
+    uint8_t version = 1;
 
-bool read_hello(int sock) {
-    if (!get_response(sock, response_buf, BUFFSIZE, false)) {
-        return false;
-    }
+    if(send(socket_fd, &version, 1, 0) <= 0)
+        return -1;
 
-    if (response_buf[0] == '-') {
-        return false;
-    }
+    if(send(socket_fd, &ulen, 1, 0) <= 0)
+        return -1;
+    
+    if(send_string(socket_fd, ulen, username) < 0)
+        return -1;
+        
+    if(send(socket_fd, &plen, 1, 0) <= 0)
+        return -1;
 
-    log_debug("Connection successful. Server is now ready.");
+    if(send_string(socket_fd, plen, password) < 0)
+        return -1;
 
-    return true;
-}
-
-static bool
-send_text(int sock, const char* text) {
-    return send(sock, text, strlen(text), MSG_DONTWAIT) >= 0;
-}
-
-static void
-simple_iteration(const char* buffer, const char* line_header) {
-    char* tok = strtok(response_buf, EOL);
-    tok = strtok(NULL, EOL); // All multiline responses begin with the line '+OK [...]'
-    int i = 0;
-    while (tok != NULL && tok[0] != '.') { // All multiline responses end with the line '.'
-        log_info("%s #%d: %s\n", line_header, i++, tok);
-        tok = strtok(NULL, EOL);
-    }
-}
-
-bool capabilities(int sock) {
-    if (!send_text(sock, commands_format[CMD_CAP])) {
-        return false;
-    }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, true)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        log_error("Error running CAP: %s\n", response_buf);
-        return false;
-    }
-
-    log_info("----------------------------");
-
-    log_info("List of capabilities:\n");
-    simple_iteration(response_buf, "CAP");
-
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
-}
-
-bool authenticate(int sock, const char* token) {
-    snprintf(request_buf, BUFFSIZE, commands_format[CMD_TOKEN], token);
-    if (!send_text(sock, request_buf)) {
-        return false;
-    }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, false)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        return false;
-    }
-
-    log_info("Authentication with token: \"%s\" successful\n", token);
-    return true;
-}
-
-bool stats(int sock) {
-    if (!send_text(sock, commands_format[CMD_STATS])) {
-        return false;
-    }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, true)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        log_error("Error running STATS: %s\n", response_buf);
-        return false;
-    }
-
-    log_info("----------------------------");
-
-    log_info("List of statistics:\n");
-    char* tok = strtok(response_buf, EOL);
-    tok = strtok(NULL, EOL);
-    while (tok != NULL && tok[0] != '.') {
-        unsigned long long int stat = strtoull(tok + 1, NULL, 10);
-        switch (tok[0]) {
-        case 'B':
-            log_info("Bytes transferred: %llu\n", stat);
-            break;
-        case 'H':
-            log_info("Historical connections: %llu\n", stat);
-            break;
-        case 'C':
-            log_info("Concurrent connections: %llu\n", stat);
-            break;
-        }
-        tok = strtok(NULL, EOL);
-    }
-
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
-}
-
-bool users(int sock) {
-    if (!send_text(sock, commands_format[CMD_USERS])) {
-        return false;
-    }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, true)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        log_error("Error running USERS: %s\n", response_buf);
-        return false;
-    }
-
-    log_info("----------------------------");
-
-    log_info("List of users:\n");
-    simple_iteration(response_buf, "USER");
-
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
-}
-
-bool buffsize(int sock) {
-    if (!send_text(sock, commands_format[CMD_BUFFSIZE])) {
-        return false;
-    }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, true)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        log_error("Error running BUFFSIZE: %s\n", response_buf);
-        return false;
-    }
-
-    log_info("----------------------------");
-
-    char* tok = strtok(response_buf, EOL);
-    tok = strtok(NULL, EOL);
-    unsigned long long int buff_size = strtoull(tok, NULL, 10);
-    log_info("Current size of the buffer: %llu\n", buff_size);
-
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
+    return 0;
 }
 
 
-bool set_buffsize(int sock, const char* size) {
-    snprintf(request_buf, BUFFSIZE, commands_format[CMD_SET_BUFFSIZE], size);
-    if (!send_text(sock, request_buf)) {
-        return false;
+int send_string(uint8_t socket_fd, uint8_t len, uint8_t * array){
+    while(len > 0){
+        int ret;
+        if((ret = send(socket_fd, array, len, 0)) <= 0)
+            return -1;
+        len -= ret;
+        array += ret;
+    } 
+    return 0;
+}
+
+void print_status(uint16_t status){
+    if(status == 0xC001)
+        print_welcome();
+    else if(status == 0x4B1D)
+        printf("Invalid credentials, please try again");
+    else{
+        printf("Please enter valid credentials");
     }
-
-    if (!get_response(sock, response_buf, BUFFSIZE, false)) {
-        return false;
-    }
-
-    if (response_buf[0] == '-') {
-        log_error("Error running SET-BUFFSIZE: %s\n", response_buf);
-        return false;
-    }
-
-    log_info("----------------------------");
-
-    log_info("Buffer size updated to %s\n", size);
-
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
 }
 
 
-bool add_user(int sock, const char* username_password) {
-    snprintf(request_buf, BUFFSIZE, commands_format[CMD_ADD_USER], username_password);
-    if (!send_text(sock, request_buf)) {
-        return false;
-    }
+int close_connection(int socket_fd){
+    printf("Closing connection...\n");
+    return close(socket_fd);
+}
 
-    if (!get_response(sock, response_buf, BUFFSIZE, false)) {
-        return false;
-    }
+void print_welcome(){
+    printf("\n===========================================================\n");
+    printf("Welcome to sock5 proxy configuration.\n\n");
+    printf("Enter \"help\" in the command prompt to see the posible configuration commands.\n");
+    printf("Enter \"quit\" in the command prompt to terminate the session.\n");
+    printf("===========================================================\n");
+}
 
-    if (response_buf[0] == '-') {
-        log_error("Error running ADD-USER: %s\n", response_buf);
-        return false;
-    }
 
-    log_info("----------------------------");
+void handle_help(int sock_fd){
+    printf("Socks5 proxy client\n");
+    printf("Entries follow the format: <command> - <description>\n\n");
+    printf("Query methods:\n");
+    for(int i = 0; i < QUERIES_TOTAL; i++)
+        printf("%s\n", query_description[i]);
 
-    log_info("Successfully added user to the list of users.\n");
+    printf("\nModification methods:\n");
+    for(int i = 0; i < MODIFIERS_TOTAL; i++)
+        printf("%s\n", modifier_description[i]);
+}
 
-    log_info("----------------------------");
-    putchar('\n');
-
-    return true;
+void handle_quit(int sock_fd){
+    close_connection(sock_fd);
+    exit(0);
 }
