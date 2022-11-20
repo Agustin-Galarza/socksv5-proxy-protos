@@ -85,7 +85,9 @@ enum yap_negociation_result yap_negociation_parser_consume(struct buffer* buffer
             return result;
         }
     }
-    return yap_negociation_parser_is_done(parser);
+    enum yap_negociation_result res = yap_negociation_parser_is_done(parser);
+    parser->status = res == YAP_NEGOCIATION_SUCCESS ? AUTH_SUCCESS : AUTH_FAIL;
+    return res;
 }
 
 // Checkeo si llego al final
@@ -98,7 +100,8 @@ int yap_negociation_parser_has_error(struct yap_negociation_parser* parser);
 
 // Free parser
 void yap_negociation_parser_free(struct yap_negociation_parser* parser) {
-    free(parser);
+    if (parser != NULL)
+        free(parser);
 }
 
 // Reset parser

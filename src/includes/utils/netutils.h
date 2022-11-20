@@ -14,6 +14,8 @@
 
 #define NO_SOCKET -1
 
+#define SEND_FLAGS MSG_NOSIGNAL
+
 typedef int socket_descriptor;
 
 #define SOCKADDR_TO_HUMAN_MIN (INET6_ADDRSTRLEN + 5 + 1)

@@ -19,11 +19,11 @@
 #include "utils/buffer.h"
 #include "utils/representation.h"
 #include "utils/selector.h"
-#include "utils/parser/client_parser.h"
 #include "utils/netutils.h"
 #include "utils/parser/negotiation.h"
 #include "utils/parser/request.h"
 #include "server/socks5_server.h"
+#include "server/admin_server.h"
 
 /*********************************
 |          Definitions          |
@@ -76,40 +76,7 @@ void admin_server_handle_read(struct selector_key* key);
 |          Function Implementations          |
 **********************************************/
 
-/**
- * Proxy TCP (origin: 127.0.0.1 9090)
- *
- * - Inicializar todos los recursos a utilizar por el servidor
- *
- * - Crear el socket pasivo (SP) (IPv4) para esperar por nuevas conexiones
- *
- * - (SP): READ - si tengo capacidad para atender nuevos clientes
- *          aceptar la conexión y agregar al nuevo cliente*
- *
- * - agregar nuevo cliente:
- *      crear estructura de datos
- *      registrar al cliente en el selector
- *      cliente (C) en estado de READ_REQUEST
- *
- * - (C): READ_REQUEST - agregar al cliente la referencia al origen fijo
- *              pasar al estado RESOLVE_ADDR
- *
- * - (C): RESOLVE_ADDR - en un nuevo thread, hacer la resolución con getaddrinfo
- *          y guardar los resultados en el cliente
- *              pasar al estado de CONNECTING
- *
- * - (C): CONNECTING - iterar por la lista de resultados y conectarse al primer
- *          endpoint posible.
- *              agregar al origen (O) al cliente y registarlo en el selector
- *              pasar al estado de COPY
- *
- * - (C), (O): COPY     (Revisar diagrama de la conexión)
- *              Read socket(C) si write_buffer tiene capacidad
- *              Read socket(O) si read_buffer tiene capacidad
- *              Write socket(C) si read_buffer tiene capacidad
- *              Write socket(O) si write_buffer tiene capacidad
- *
- */
+
 bool run_server(struct server_config* config) {
     /************* Variables and Init *************/
     signal(SIGINT, handle_sig_kill);
@@ -197,6 +164,22 @@ bool run_server(struct server_config* config) {
         goto end;
     }
 
+    status = selector_register(selector, sockets.admin.ipv4_fd, get_admin_server_handlers(), OP_READ, &admin_server_data);
+    if (status != SELECTOR_SUCCESS) {
+        log_error("Could not register admin IPv4 socket");
+
+        error = true;
+        goto end;
+    }
+
+    status = selector_register(selector, sockets.admin.ipv6_fd, get_admin_server_handlers(), OP_READ, &admin_server_data);
+    if (status != SELECTOR_SUCCESS) {
+        log_error("Could not register admin IPv6 socket");
+
+        error = true;
+        goto end;
+    }
+
     /** Loop del servidor **/
 
     for (; server_active;) {
@@ -229,6 +212,16 @@ struct server_sockets
     // Run initialization scripts
     if (socks5_init_server()) {
         log_error("Could not initialize socks5 server");
+        return sockets;
+    }
+
+    // TODO: remove
+    user_list_t* users = user_list_init(10);
+    user_list_add(users, "User1", "Pass1");
+    user_list_add(users, "User2", "Pass2");
+    /////////////////////////
+    if (admin_server_init(users)) {
+        log_error("Could not initialize admin server");
         return sockets;
     }
 
@@ -379,6 +372,3 @@ void close_sockets(struct server_sockets sockets) {
         close(sockets.socks5.ipv4_fd);
 }
 
-void admin_server_handle_read(struct selector_key* key) {
-    log_error("admin_server_handle_read: Not implemented");
-}

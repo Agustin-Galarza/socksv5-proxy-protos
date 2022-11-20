@@ -28,14 +28,33 @@ int main(int argc, char* argv[]) {
         goto finally;
     }
 
+    // escribir hello
+    // [ 0x05, 0x01, 0x02 ]
+
     log_debug("----------------------------");
     log_debug("CONNECTING TO SERVER");
+
+    // read hello
+
+    // [0x05, 0x00] -> bien, pq soportas el método 0x00 (sin usuario)
+    // [0x05, 0xFF] -> mal, no soporta los métodos
 
     if (!read_hello(conf.sock)) {
         err_msg = "Error in server greeting";
         exit_status = 1;
         goto finally;
     }
+
+    // mandar request
+
+    // [0x05, 0x01, 0x00, 0x03 (DOMAINNAME), "google.com", 0x00, 0x80]
+    // [0x05, 0x01, 0x00, 0x01 (IPv4), 192, 168, 0, 2, 0x00, 0x80]
+
+    // leer response
+
+    // [0x05, 0x00 (todo bien), .........]
+
+
 
     log_debug("----------------------------");
     log_debug("");

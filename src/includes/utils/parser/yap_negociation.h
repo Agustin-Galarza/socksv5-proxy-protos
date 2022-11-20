@@ -33,8 +33,9 @@
 */
 
 #define VERSION 0x01
-#define MAX_USERNAME 255
-#define MAX_PASSWORD 255
+#define MAX_STR_LEN 255
+#define MAX_USERNAME MAX_STR_LEN
+#define MAX_PASSWORD MAX_STR_LEN
 #define LIMITER 0x00
 
 enum yap_negociation_status {
@@ -64,6 +65,7 @@ struct yap_negociation_parser {
     int username_len;
     int username_current;
     int password_len;
+    enum yap_negociation_status status;
     int password_current;
 };
 
