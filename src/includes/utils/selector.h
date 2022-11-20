@@ -193,4 +193,7 @@ selector_status
 selector_notify_block(fd_selector s,
                       const int fd);
 
+/** modifica el valor de tiempo máximo de bloqueo para un selector */
+void selector_set_timeout(fd_selector s, struct timespec new_timeout);
+
 #endif
