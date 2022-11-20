@@ -16,14 +16,16 @@ int main(int argc, char* argv[]) {
     };
     struct sockaddr_in6 ipv6_address;
     struct sockaddr_in ipv4_address;
-    char * addr = conf.addr;
+    char * addr = (char *)conf.addr;
     int version = conf.version;
-    char * port = conf.port;
+    unsigned short port = (unsigned short) atoi(conf.port);
     int tries=0;
     uint16_t status = 0;
     uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
     int sock;
-    uint8_t cmd;
+
+    buffer * cmd = malloc(sizeof(buffer*));
+    cmd->data = malloc(sizeof(uint8_t)*BUFF_SIZE);
 
     if (!parse_conf(argc, argv, &conf)) {
         err_msg = "Error parsing configuration from arguments";
@@ -69,11 +71,15 @@ int main(int argc, char* argv[]) {
 
         enum yap_result res = yap_parser_consume(cmd, parser);
 
-        print_response(cmd, parser, sock);
+        print_response(cmd->data, parser, sock);
 
         free(parser);
 
         putchar('\n');
     }
+
+    free(cmd->data);
+    free(cmd);
+
     return 0;
 }

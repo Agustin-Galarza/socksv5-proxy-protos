@@ -1,5 +1,5 @@
-#include "utils/parser/auth_negotiation.h"
 #include <string.h>
+#include "../../includes/utils/parser/auth_negociation.h"
 #include "utils/logger/logger.h"
 
 
@@ -122,7 +122,7 @@ void auth_negociation_parser_reset(struct auth_negociation_parser* parser) {
 }
 
 // Checkeo si el parser termino
-enum auth_negociation_results auth_negociation_parser_is_finished(struct auth_negociation_parser* parser) {
+enum auth_negociation_results auth_negociation_parser_has_finished(struct auth_negociation_parser* parser) {
     return parser->state == AUTH_NEGOCIATION_DONE ? AUTH_NEGOCIATION_PARSER_FINISHED : AUTH_NEGOCIATION_PARSER_NOT_FINISHED;
 }
 

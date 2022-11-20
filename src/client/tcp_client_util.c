@@ -9,6 +9,23 @@
 #include "utils/util.h"
 #include "client/tcp_client_util.h"
 
+char * queries[] = {"thc", "cc", "tbs", "ul"};
+char * query_description[] = {
+    "thc - Get Total Historical Connections",
+    "cc - Get Concurrent Connections",
+    "tbs - Get Total Bytes Sent",
+    "ul - Get User List"
+};
+
+char * modifiers[] = {"au", "ru"};
+char * modifier_description[] = {
+    "au - Add User",
+    "ru - Remove User"
+};
+
+char * builtin_names[] = {"help", "quit"};
+void (*builtin[])(int) = {handle_help, handle_quit};
+
 
 int connect_to_ipv4(struct sockaddr_in * ipv4_address, unsigned short port , char * address){
     int sock_fd = socket(AF_INET , SOCK_STREAM , 0);

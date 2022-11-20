@@ -12,7 +12,7 @@
 */
 
 enum auth_negociation_results {
-    AUTH_NEGOCIATION_PARSER_FINISH_OK = 0,
+    AUTH_NEGOCIATION_PARSER_FINISHED = 0,
     AUTH_NEGOCIATION_PARSER_ERROR = 1,
     AUTH_NEGOCIATION_PARSER_NOT_FINISHED = 2,
 };
@@ -57,6 +57,6 @@ enum auth_negociation_results auth_negociation_parser_consume(struct auth_negoci
 void auth_negociation_parser_reset(struct auth_negociation_parser* parser);
 
 // Checkeo si el parser termino
-enum auth_negociation_results auth_negociation_parser_is_finished(struct auth_negociation_parser* parser);
+enum auth_negociation_results auth_negociation_parser_has_finished(struct auth_negociation_parser* parser);
 
 #endif

@@ -8,8 +8,10 @@
 #include <sys/socket.h>
 #include <stdbool.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 
 #include "utils/parser/yap_parser.h"
+
 
 #define CREDS_LEN 128
 #define MAX_AUTH_TRIES 3
@@ -36,19 +38,7 @@
 
 #define BUFF_SIZE 256
 
-char * queries[] = {"thc", "cc", "tbs", "ul"};
-char * query_description[] = {
-    "thc - Get Total Historical Connections",
-    "cc - Get Concurrent Connections",
-    "tbs - Get Total Bytes Sent",
-    "ul - Get User List"
-};
 
-char * modifiers[] = {"au", "ru"};
-char * modifier_description[] = {
-    "au - Add User",
-    "ru - Remove User"
-};
 
 int connect_to_ipv4(struct sockaddr_in * ipv4_address, unsigned short port , char * address);
 int connect_to_ipv6(struct sockaddr_in6 * ipv6_address, unsigned short port,char * address);
@@ -76,7 +66,6 @@ int close_connection(int socket_fd);
 
 void handle_quit(int sock_fd);
 void handle_help(int sock_fd);
-char * builtin_names[] = {"help", "quit"};
-void (*builtin[])(int) = {handle_help, handle_quit};
+
 
 #endif
