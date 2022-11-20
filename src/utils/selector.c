@@ -599,3 +599,8 @@ int selector_fd_set_nio(const int fd) {
     }
     return ret;
 }
+
+void selector_set_timeout(fd_selector s, struct timespec new_timeout) {
+    s->master_t.tv_sec = new_timeout.tv_sec;
+    s->master_t.tv_nsec = new_timeout.tv_nsec;
+}

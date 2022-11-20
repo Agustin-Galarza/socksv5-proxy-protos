@@ -1,7 +1,6 @@
 /**
  * TODO:
  * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
- * - Add a timeout
  */
 #include <errno.h>
 #include <string.h>
@@ -38,8 +37,6 @@
 #define JOIN_PORT_ARRAY(port_arr) *((uint16_t*)port_arr)
 
 #define ORIGIN_SV_DEFAULT_STR "origin server (unresolved)"
-
-#define SEND_FLAGS MSG_NOSIGNAL
 
 #define CAN_READ(duplex) (duplex & OP_READ)
 #define CAN_WRITE(duplex) (duplex & OP_WRITE)
@@ -327,11 +324,8 @@ static unsigned copy_read(struct selector_key* key);
 static unsigned sniff_write(struct selector_key* key);
 static unsigned sniff_read(struct selector_key* key);
 
-// DONE
+// DONE - ERROR
 static void close_connection_normally(const unsigned state, struct selector_key* key);
-
-// ERROR
-static void close_connection_error(const unsigned state, struct selector_key* key);
 
 uint8_t choose_socks5_method(uint8_t methods[2]);
 
@@ -409,7 +403,7 @@ static const struct state_definition socks5_states[] = {
         .on_arrival = close_connection_normally,
     },{
         .state = CONNECTION_ERROR,
-        .on_arrival = close_connection_error,
+        .on_arrival = close_connection_normally,
     },
 };
 
@@ -703,7 +697,7 @@ negotiating_req_init(const unsigned state, struct selector_key* key) {
 static void
 negotiating_req_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 }
@@ -792,7 +786,7 @@ static unsigned write_hello(struct selector_key* key) {
 static void
 negotiating_res_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
 
         return;
     }
@@ -823,7 +817,7 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
 
 static void address_req_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
 
         return;
     }
@@ -942,7 +936,7 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
         client->dst_hint.address[client->parser->address_length] = '\0';
 
         client->dst_hint.port = malloc(MAX_PORT_STR_LEN + 1);
-        port_itoa(htons(JOIN_PORT_ARRAY(client->parser->port)), client->dst_hint.port);
+        port_itoa(ntohs(JOIN_PORT_ARRAY(client->parser->port)), client->dst_hint.port);
 
         resolve_fqdn_address(client);
         break;
@@ -988,7 +982,7 @@ resolve_fqdn_address_end:
 
 static void resolve_addr_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
 
         return;
     }
@@ -1033,7 +1027,7 @@ static void start_connection(const unsigned state, struct selector_key* key) {
         data->resolved_addresses_list.current = NULL;
         freeaddrinfo(origin->resolved_addresses_list->start);
 
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 
@@ -1045,14 +1039,14 @@ static void start_connection(const unsigned state, struct selector_key* key) {
     data->references++;
     if (selector_register(selector, origin_local_socket, &socks5_client_handlers, OP_WRITE, data) != SELECTOR_SUCCESS) {
         //TODO: handle error
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 }
 
 static void connecting_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
 
         return;
     }
@@ -1113,7 +1107,7 @@ address_res_init_end:
 
 static void address_res_close(const unsigned state, struct selector_key* key) {
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
 
         return;
     }
@@ -1142,7 +1136,7 @@ static unsigned write_address_res(struct selector_key* key) {
     buffer_read_adv(client->read_buffer, bytes_sent);
 
     if (bytes_sent == bytes_to_send)
-        return htons(JOIN_PORT_ARRAY(client->parser->port)) == POP3_PORT ? SNIFF : COPY;
+        return ntohs(JOIN_PORT_ARRAY(client->parser->port)) == POP3_PORT ? SNIFF : COPY;
 
     return ADDRESS_RES;
 }
@@ -1267,7 +1261,7 @@ static void sniff_n_copy_close(const unsigned state, struct selector_key* key) {
         pop3_parser_free(get_sniff_struct_ptr(key)->parser);
     }
     if (GET_DATA(key)->status == CLOSING) {
-        close_connection_error(CONNECTION_ERROR, key);
+        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 }
@@ -1333,24 +1327,10 @@ static unsigned copy_read(struct selector_key* key) {
 
 static void close_connection_normally(const unsigned state, struct selector_key* key) {
     struct client_data* client = GET_DATA(key);
-    log_info("Closing connection of %s", client->client_str);
-    if (client->status != CLOSING) {
-        client->status = CLOSING;
-        socks5_unregister_client(client);
-        close(client->client_fd);
-        if (client->origin_fd > 0) {
-            close(client->origin_fd);
-        }
-        client->references = 1;
-        socks5_free_client_data(client);
-        return;
+    if (state == CONNECTION_ERROR) {
+        log_error("There was an error on execution for %s", client->client_str);
     }
-    close(key->fd);
-}
-
-static void close_connection_error(const unsigned state, struct selector_key* key) {
-    struct client_data* client = GET_DATA(key);
-    log_error("There was an error on execution for %s", client->client_str);
+    log_info("Closing connection of %s", client->client_str);
     if (client->status != CLOSING) {
         client->status = CLOSING;
         socks5_unregister_client(client);

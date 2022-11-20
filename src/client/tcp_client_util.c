@@ -84,6 +84,9 @@ get_response(int sock, char* buff, size_t len, bool multiline) {
     return true;
 }
 
+// - -> error
+// \r\n -> fin de linea
+// \r\n.\r\n -> fin de comando
 
 /*
  * buff is expected to hold a null terminated string
