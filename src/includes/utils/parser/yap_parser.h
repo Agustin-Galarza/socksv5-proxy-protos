@@ -52,6 +52,7 @@ enum yap_result {
 
 struct yap_parser {
     enum yap_states state;
+    enum yap_result result;
     enum yap_commands command;
     // USERS
     // METRICS

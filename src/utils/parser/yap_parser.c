@@ -38,7 +38,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
                 parser->state = YAP_STATE_CONFIG;
                 break;
             default:
-                break;
+                return YAP_PARSER_ERROR;
             }
             log_debug("Comando correcto %d", byte);
             return YAP_PARSER_NOT_FINISHED;
@@ -140,6 +140,7 @@ enum yap_result yap_parser_consume(struct buffer* buffer, struct yap_parser* par
     while (buffer_can_read(buffer) && result == YAP_PARSER_NOT_FINISHED) {
         result = yap_parser_feed(parser, buffer_read(buffer));
     }
+    parser->result = result;
     return result;
 }
 
@@ -148,6 +149,7 @@ void yap_parser_reset(struct yap_parser* parser) {
     parser->state = YAP_STATE_COMMAND;
     parser->command = YAP_NO_COMMAND;
     parser->metric = 0;
+    parser->result = YAP_PARSER_NOT_FINISHED;
     parser->username_length = 0;
     parser->password_length = 0;
     parser->username_current = 0;

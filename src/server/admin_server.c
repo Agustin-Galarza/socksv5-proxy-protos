@@ -391,19 +391,19 @@ static unsigned read_authentication_request(struct selector_key* key) {
         }
         break;
     }
-
+    return ADMIN_SERVER_STATE_AUTHENTICATION_REQ;
 }
 
 static bool authenticate_user(struct protocol_string* username, struct protocol_string* password) {
-    return strncmp(only_admin.username, (char*)username->value, username->len) &&
-        strncmp(only_admin.password, (char*)password->value, password->len);
+    return strncmp(only_admin.username, (char*)username->value, username->len) == 0 &&
+        strncmp(only_admin.password, (char*)password->value, password->len) == 0;
 }
 
 static void
 authentication_res_init(const unsigned int state, struct selector_key* key) {
     struct admin_data* admin = key->data;
 
-    buffer_reset(admin->read_buffer);
+    // buffer_reset(admin->read_buffer);
     buffer_write(admin->read_buffer, ADMIN_SERVER_VERSION);
     if (admin->negotiation_parser->status == AUTH_SUCCESS) {
         // El parseo fue correcto, ahora hay que autenticar
@@ -426,11 +426,18 @@ authentication_res_close(const unsigned int state, struct selector_key* key) {
 
     enum yap_negociation_status status = admin->negotiation_parser->status;
 
+    strncpy(admin->admin_str, (char*)admin->negotiation_parser->username, admin->negotiation_parser->username_len);
+    admin->admin_str[admin->negotiation_parser->username_len] = '\0';
+
     yap_negociation_parser_free(admin->negotiation_parser);
     admin->negotiation_parser = NULL;
 
     if (status != AUTH_SUCCESS)
         close_connection(ADMIN_SERVER_STATE_DONE, key);
+
+    log_info("Admin Authorized: %s", admin->admin_str);
+
+    selector_set_interest(admin->selector, admin->admin_fd, OP_READ);
 }
 static unsigned write_authentication_response(struct selector_key* key) {
     errno = 0;
@@ -471,7 +478,7 @@ static unsigned read_cmd_request(struct selector_key* key) {
         buffer_reset(admin->write_buffer);
 
     size_t max_write;
-    uint8_t* buff_raw = buffer_write_ptr(admin->read_buffer, &max_write);
+    uint8_t* buff_raw = buffer_write_ptr(admin->write_buffer, &max_write);
 
     int read_status = read(admin->admin_fd, buff_raw, max_write);
     switch (read_status) {
@@ -480,7 +487,8 @@ static unsigned read_cmd_request(struct selector_key* key) {
         break;
     case 0:
         // No va a haber data extra para mandarle al cliente en esta etapa, por lo que se cierra el socket directamnente
-        return ADMIN_SERVER_STATE_DONE;
+        if (!buffer_can_read(admin->write_buffer))
+            return ADMIN_SERVER_STATE_DONE;
     default:
         buffer_write_adv(admin->write_buffer, read_status);
         enum yap_result result = yap_parser_consume(admin->write_buffer, admin->cmd_parser);
@@ -489,13 +497,13 @@ static unsigned read_cmd_request(struct selector_key* key) {
             log_error("Could not parse command");
         case YAP_PARSER_FINISH:
             buffer_reset(admin->write_buffer);
-            admin->cmd_parser->config_value;
             return ADMIN_SERVER_STATE_CMD_RES;
         default:
             break;
         }
         break;
     }
+    return ADMIN_SERVER_STATE_CMD_REQ;
 }
 
 static void* build_cmd_args(struct yap_parser* parser) {
@@ -560,6 +568,12 @@ static void
 cmd_res_init(const unsigned int state, struct selector_key* key) {
     struct admin_data* admin = key->data;
 
+    if (admin->cmd_parser->result == YAP_PARSER_ERROR) {
+        buffer_write(admin->read_buffer, 0xFF);
+        buffer_write(admin->read_buffer, 0xFF);
+        goto cmd_res_init_end;
+    }
+
     // Resolver el comando solicitado
     void* args = build_cmd_args(admin->cmd_parser);
     cmd_handlers[admin->cmd_parser->command - 1](args);
@@ -571,11 +585,19 @@ cmd_res_init(const unsigned int state, struct selector_key* key) {
     uint8_t* buff_raw = buffer_write_ptr(admin->read_buffer, &max_write);
 
     memcpy(buff_raw, payload.data, payload.size);
+    payload.size = 0;
     buffer_write_adv(admin->read_buffer, payload.size);
+
+cmd_res_init_end:
+    selector_set_interest(admin->selector, admin->admin_fd, OP_WRITE);
 }
 static void
 cmd_res_close(const unsigned int state, struct selector_key* key) {
+    struct admin_data* admin = key->data;
 
+    yap_parser_reset(admin->cmd_parser);
+
+    selector_set_interest(admin->selector, admin->admin_fd, OP_READ);
 }
 static unsigned write_cmd_response(struct selector_key* key) {
     errno = 0;
@@ -629,24 +651,29 @@ static void get_all_users(void* _) {
     for (int i = 0; i < users_amount; i++) {
         struct user_list_user usr = user_list_get(allowed_users, i);
 
+        size_t aux;
+
         size_t username_len = strlen(usr.username);
         buffer_write(&users_buff, username_len);
+        strncpy((char*)buffer_write_ptr(&users_buff, &aux), usr.username, username_len);
         buffer_write_adv(&users_buff, username_len);
 
         size_t password_len = strlen(usr.password);
         buffer_write(&users_buff, password_len);
+        strncpy((char*)buffer_write_ptr(&users_buff, &aux), usr.password, password_len);
         buffer_write_adv(&users_buff, password_len);
+
     }
     size_t list_size;
     buffer_read_ptr(&users_buff, &list_size);
+    payload.size = list_size;
     list_size -= list_len_bytes;
     uint32_t nlist_size = htonl(list_size);
     memcpy(payload.data, &nlist_size, list_len_bytes);
 }
 
 static void get_metric(void* metric) {
-    log_warning("TODO");
-
+    log_warning("TODO: métrica");
 }
 
 #define OK_STATUS 0x00
