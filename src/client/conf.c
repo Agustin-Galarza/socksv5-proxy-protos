@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <getopt.h>
+#include <limits.h> 
+#include <errno.h>
 
 #include "client/conf.h"
 #include "client/tcp_client_util.h"
@@ -11,6 +14,21 @@ version(void) {
     fprintf(stderr, "Cliente de administración\n"
                     "ITBA Protocolos de Comunicación 2023/1 -- Grupo X\n"
                     "LICENCIA\n");
+}
+
+static unsigned short
+port(const char *s) {
+    char *end     = 0;
+    const long sl = strtol(s, &end, 10);
+
+    if (end == s|| '\0' != *end
+        || ((LONG_MIN == sl || LONG_MAX == sl) && ERANGE == errno)
+        || sl < 0 || sl > USHRT_MAX) {
+        fprintf(stderr, "port should in in the range of 1-65536: %s\n", s);
+        exit(1);
+        return 1;
+    }
+    return (unsigned short)sl;
 }
 
 static void
@@ -27,45 +45,51 @@ usage(const char* progname) {
     exit(1);
 }
 
-bool parse_conf(const int argc, char** argv, struct tcp_conf* tcp_conf) {
+bool parse_conf(const int argc, char** argv, struct tcp_conf* args) {
+    memset(args, 0, sizeof(*args));
+
+    args->addr = NULL;
+    args->port = 8080;
+
+
     int c;
-    opterr = 0, optind = 0;
-    while (-1 != (c = getopt(argc, argv, ARGUMENTS))) {
+
+    while (true) {
+        int option_index = 0;
+
+        c = getopt_long(argc, argv, "hL:P:46", NULL, &option_index);
+        if (c == -1)
+            break;
+
         switch (c) {
-        case 'h':
-            usage(argv[0]);
-            exit(0);
-        case 'L':
-            if (*optarg == '-') {
-                fprintf(stderr, "Option -L requires an argument.\n");
-                return false;
-            }
-            tcp_conf->addr = optarg;
-            break;
-        case 'P':
-            if (*optarg == '-') {
-                fprintf(stderr, "Option -P requires an argument.\n");
-                return false;
-            }
-            tcp_conf->port = optarg;
-            break;
-        case '4':
-            tcp_conf->version =4;
-        case '6':
-            tcp_conf->version =6;
-        default:
-            fprintf(stderr, "Unknown argument %c.\n", optopt);
-            return false;
+            case 'h':
+                usage(argv[0]);
+                break;
+            case 'L':
+                args->addr = optarg;
+                break;
+            case 'P':
+                printf("Connecting to port %s\n", optarg);
+                args->port = port(optarg);
+                break;
+            case '4':
+                args->version=4;
+                break;
+            case '6':
+                args->version=6;
+                break;
+            default:
+                fprintf(stderr, "unknown argument %d.\n", c);
+                exit(1);
         }
     }
-    if (optind - argc < 1) {
-        fprintf(stderr, "Invalid argument: ");
-        while (optind - argc < 1) {
+    if (optind < argc) {
+        fprintf(stderr, "argument not accepted: ");
+        while (optind < argc) {
             fprintf(stderr, "%s ", argv[optind++]);
         }
         fprintf(stderr, "\n");
-        usage(argv[0]);
-        return false;
+        exit(1);
     }
     return true;
 }

@@ -9,18 +9,25 @@
 #include "utils/util.h"
 #include "client/tcp_client_util.h"
 
-char * queries[] = {"thc", "cc", "tbs", "ul"};
-char * query_description[] = {
-    "thc - Get Total Historical Connections",
-    "cc - Get Concurrent Connections",
-    "tbs - Get Total Bytes Sent",
-    "ul - Get User List"
+char * commands[] = {"ul", "m", "au", "ru", "c"};
+char * cmd_description[] = {
+    "ul - Get User List",
+    "m  - Select from a list of metrics",
+    "au - Add User",
+    "ru - Remove User",
+    "c  - Select from a list of configurations"
 };
 
-char * modifiers[] = {"au", "ru"};
-char * modifier_description[] = {
-    "au - Add User",
-    "ru - Remove User"
+
+char * available_metrics[] = {
+    "hc - Prints the number of historic connections",
+    "cc - Prints the number of concurrent connections",
+    "bs - Prints the number of bytes sent"
+};
+
+char * available_config[] = {
+    "tout     - Sets timeout to given seconds",
+    "bsize    - Sets buffer size to given size"
 };
 
 char * builtin_names[] = {"help", "quit"};
@@ -38,7 +45,7 @@ int connect_to_ipv4(struct sockaddr_in * ipv4_address, unsigned short port , cha
     inet_pton(AF_INET, address, &ipv4_address->sin_addr.s_addr);
 
     if(connect(sock_fd, (struct sockaddr *) ipv4_address, sizeof(*ipv4_address)) < 0){
-        printf("Unable to connect\n");
+        printf("Unable to connect IPv4\n");
         close(sock_fd);
         return -1;
     }
@@ -58,7 +65,7 @@ int connect_to_ipv6(struct sockaddr_in6 * ipv6_address, unsigned short port,char
     ipv6_address->sin6_port= htons(port);
 
     if(connect(sock_fd, (struct sockaddr *) ipv6_address, sizeof(*ipv6_address)) < 0){
-        printf("Unable to connect\n");
+        printf("Unable to connect IPv6\n");
         close(sock_fd);
         return -1;
     }
@@ -123,24 +130,88 @@ int ask_password(uint8_t * password){
     return strlen((char *) password);
 }
 
+int ask_metric(uint8_t * metric){
+    fflush(stdout);
+    if(!fgets((char *) metric, CREDS_LEN, stdin))
+        return -1;
 
-int print_response(uint8_t * cmd,  struct yap_parser * parser, int socket){
-    switch(*cmd){
-        case LIST_USERS:
+    if(*metric == '\n')
+        return -1;
+    
+    for (int i = 0; i < strlen((char*)metric); i++){
+        if (metric[i] == '\n')
+            metric[i] = 0;
+    }
+
+    return *metric;
+}
+
+int ask_command(int socket, struct yap_parser * parser){
+    char cmd[COMMAND_LEN];
+    printf("$> ");
+
+    fflush(stdout);
+
+    if(!fgets((char *) cmd, COMMAND_LEN, stdin))
+        return -1;
+
+    char * end = strchr((char *) cmd, '\n');
+    if(end == NULL){
+        printf("Invalid command\n");
+        handle_help();
+        while(getc(stdin) != '\n');
+        return 0;
+    }
+    else
+        cmd[end-(char *) cmd] = 0; 
+
+    for(int i = 0; i < BUILTIN_TOTAL; i++){
+        if(!strcmp(builtin_names[i], cmd)){
+            builtin[i](socket);
+            return 1;
+        }
+    }
+
+    uint8_t command = 0;
+    for(int i = 0; i < CMD_TOTAL; i++){
+        if(strcmp(commands[i], cmd) == 0){
+            command = i+1;
+            break;
+        }
+    }
+
+    if(command == 0){
+        printf("Invalid command: %s\n", cmd);
+        handle_help();
+        return 0;
+    }
+
+    parser->command = 0;
+
+    enum yap_result res = yap_parser_feed(parser, command);
+    return print_response(parser, socket);
+}
+
+
+
+int print_response(struct yap_parser * parser, int socket){
+    switch(parser->state){
+        case YAP_STATE_USER:
             return print_user_list(socket);
+
+        case YAP_STATE_METRIC:
+            return print_metric(socket, parser); 
             
-        case ADD_USER:
+        case YAP_STATE_ADD_USER:
             return print_added_user(parser);
 
-        case REMOVE_USER:
+        case YAP_STATE_REMOVE_USER:
             return print_removed_user(parser);
 
-        case METRIC:
-            return print_metric(socket); 
-
-        case CONFIG:
+        case YAP_STATE_CONFIG:
             return print_config(socket);
         }
+
     return -1;
 }
 
@@ -153,11 +224,34 @@ int print_removed_user(struct yap_parser * parser){
 }
 
 
-int print_metric(int socket){
+int print_metric(int socket, struct yap_parser * parser){
+    handle_metrics();
+
+    uint8_t * metric = malloc(BUFF_SIZE);
+
+    ask_metric(metric);
+
+    if (!strcmp((char*)metric, "hc"))
+        parser->metric = YAP_METRIC_HISTORICAL_CONNECTIONS;
+    else if (!strcmp((char*)metric, "cc"))
+        parser->metric = YAP_METRIC_CONCURRENT_CONNECTIONS;
+    else if (!strcmp((char*)metric, "bs"))
+        parser->metric = YAP_METRIC_BYTES_SEND;
+    else 
+        printf("Unknown command\n");
+
+    free(metric);
+
+    if(send_command(socket, parser) < 0){
+        return -1;
+    }
+
     char * buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
+
     if (bytes == 0)
         return -1;
+
     buffer++;
 
     switch(htons(buffer[0])){
@@ -169,6 +263,8 @@ int print_metric(int socket){
 
         case YAP_METRIC_BYTES_SEND:
             return ntohs(print_bytes_sent(buffer));
+        default:
+            printf("Error getting metric\n");
     }
     return -1;
 }
@@ -186,6 +282,11 @@ int print_bytes_sent(char* buffer){
 }
 
 int print_user_list(int socket){
+
+    printf("Entered user list\n");
+
+    struct yap_parser * parser = yap_parser_init();
+
     char * buffer = malloc(BUFF_SIZE);
 
     size_t bytes = read(socket, buffer, BUFF_SIZE);
@@ -213,6 +314,7 @@ int print_user_list(int socket){
 }
 
 int print_config(int socket){
+    handle_config();
     char * buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
     if (bytes == 0)
@@ -275,6 +377,50 @@ int send_string(uint8_t socket_fd, uint8_t len, uint8_t * array){
     return 0;
 }
 
+int send_command(int sock_fd, struct yap_parser * parser){
+    if(send(sock_fd, &parser->command, 1, 0) < 0)
+        return -1;
+
+    int res = -1;
+    switch(parser->command){
+        case YAP_COMMANDS_METRICS:
+            res = send(sock_fd, &parser->metric, 1, 0);
+            if (res < 0)
+                break;
+            res = send(sock_fd, &parser->metric_value, 1, 0);
+        case YAP_COMMANDS_ADD_USER:
+            res = send(sock_fd, &parser->username, parser->username_length, 0);
+            if (res < 0)
+                break;
+            res = send(sock_fd, &parser->password, parser->password_length, 0);
+        case YAP_COMMANDS_REMOVE_USER:
+            res = send(sock_fd, &parser->username, parser->username_length, 0);
+        case YAP_COMMANDS_CONFIG:
+            res = send(sock_fd, &parser->config, 1, 0);
+            if (res < 0)
+                break;
+            uint16_t toSend = htons(parser->config_value);
+            res = send(sock_fd, &toSend, 2, 0);
+    }
+
+    if(res < 0)
+        return -1;
+
+    return 0;
+}
+
+static int send_array(uint8_t socket_fd, uint8_t len, uint8_t * array){
+    while(len > 0){
+        int ret;
+        if((ret = send(socket_fd, array, len, 0)) <= 0)
+            return -1;
+        len -= ret;
+        array += ret;
+    } 
+    return 0;
+}
+
+
 void print_status(uint16_t status){
     if(status == 0xC001)
         print_welcome();
@@ -300,16 +446,26 @@ void print_welcome(){
 }
 
 
-void handle_help(int sock_fd){
-    printf("Socks5 proxy client\n");
-    printf("Entries follow the format: <command> - <description>\n\n");
-    printf("Query methods:\n");
-    for(int i = 0; i < QUERIES_TOTAL; i++)
-        printf("%s\n", query_description[i]);
+void handle_help(){
+    printf("\nList of supported commands:\n");
+    for(int i = 0; i < CMD_TOTAL; i++)
+        printf("%s\n", cmd_description[i]);
+}
 
-    printf("\nModification methods:\n");
-    for(int i = 0; i < MODIFIERS_TOTAL; i++)
-        printf("%s\n", modifier_description[i]);
+void handle_metrics(){
+    printf("\nList of supported metrics:\n");
+    for(int i = 0; i < METRICS_TOTAL; i++)
+        printf("%s\n", available_metrics[i]);
+    printf("\nSend your command as <command>\n\n");
+    printf("$> ");
+}
+
+void handle_config(){
+    printf("\nList of supported configurations:\n");
+    for(int i = 0; i < CONFIG_TOTAL; i++)
+        printf("%s\n", available_config[i]);
+    printf("\nSend your command as <command> <value>\n\n");
+    printf("$> ");
 }
 
 void handle_quit(int sock_fd){

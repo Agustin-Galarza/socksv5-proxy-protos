@@ -85,18 +85,18 @@ Data types supported:
 		3.1.1 Request
 
 			+--------+
-            		|  CMD   |
-            		+--------+
-            		| '0x01' |
-            		+--------+
+            |  CMD   |
+            +--------+
+            | '0x01' |
+            +--------+
 		
 		3.1.2 Response
 
 			+--------+-------------+
-            		|  CMD   |  USER_LIST  | 
-            		+--------+-------------+
-            		| '0x01' | string list | 
-            		+--------+-------------+
+            |  CMD   |  USER_LIST  | 
+            +--------+-------------+
+            | '0x01' | string list | 
+            +--------+-------------+
 
 			Where:
 				- USER_LIST: list of users, each one represented by their username
@@ -106,10 +106,10 @@ Data types supported:
 		3.2.1 Request
 
 			+--------+--------+
-            		|  CMD   | METRIC | 
-            		+--------+--------+
-            		| '0x02' | u_int8 | 
-            		+--------+--------+
+            |  CMD   | METRIC | 
+            +--------+--------+
+            | '0x02' | u_int8 | 
+            +--------+--------+
 
 			Where METRIC:
 				- '0x00': Historic connections
@@ -120,10 +120,10 @@ Data types supported:
 		3.2.2 Response
 
 			+--------+--------+---------+
-            		|  CMD   | METRIC |  VALUE  |
-            		+--------+--------+---------+
-            		| '0x02' | u_int8 | u_int16 | 
-            		+--------+--------+---------+
+            |  CMD   | METRIC |  VALUE  |
+            +--------+--------+---------+
+            | '0x02' | u_int8 | u_int16 | 
+            +--------+--------+---------+
 
 			Where:
 				- METRIC: has the same value as the metric requested
@@ -134,10 +134,10 @@ Data types supported:
 		3.3.1 Request
 
 			+--------+---------+--------+
-            		|  CMD   | USRNAME | PASSWD |
-            		+--------+---------+--------+
-            		| '0x03' | string  | string | 
-            		+--------+---------+--------+
+            |  CMD   | USRNAME | PASSWD |
+            +--------+---------+--------+
+            | '0x03' | string  | string | 
+            +--------+---------+--------+
 
 			Where:
 				- USRNAME: username
@@ -146,10 +146,10 @@ Data types supported:
 		3.3.2 Response
 
 			+--------+--------+
-            		|  CMD   | STATUS | 
-            		+--------+--------+
-            		| '0x03' | u_int8 | 
-            		+--------+--------+
+            |  CMD   | STATUS | 
+            +--------+--------+
+            | '0x03' | u_int8 | 
+            +--------+--------+
 
 			Where STATUS:
 				- '0x00': OK
@@ -163,10 +163,10 @@ Data types supported:
 		3.4.1 Request
 
 			+--------+---------+
-            		|  CMD   | USRNAME | 
-            		+--------+---------+
-            		| '0x04' | string  | 
-            		+--------+---------+
+            |  CMD   | USRNAME | 
+            +--------+---------+
+            | '0x04' | string  | 
+            +--------+---------+
 
 			Where:
 				- USRNAME: username
@@ -174,10 +174,10 @@ Data types supported:
 		3.4.2 Response
 
 			+--------+--------+
-            		|  CMD   | STATUS | 
-            		+--------+--------+
-            		| '0x04' | u_int8 | 
-            		+--------+--------+
+            |  CMD   | STATUS | 
+            +--------+--------+
+            | '0x04' | u_int8 | 
+            +--------+--------+
 
 			Where STATUS:
 				- '0x00': OK
@@ -189,10 +189,10 @@ Data types supported:
 		3.5.1 Change timeout request
 
 			+--------+--------+-----------+
-            		|  CMD   |  CONF  |  SECONDS  |
-            		+--------+--------+-----------+
-            		| '0x05' | '0x00' |  u_int16  |
-            		+--------+--------+-----------+
+            |  CMD   |  CONF  |  SECONDS  |
+            +--------+--------+-----------+
+            | '0x05' | '0x00' |  u_int16  |
+            +--------+--------+-----------+
 
 			Where:
 				- SECONDS: timeout value in seconds for clients
@@ -200,10 +200,10 @@ Data types supported:
 		3.5.2 Change buffer size request
 
 			+--------+--------+-----------+
-            		|  CMD   |  CONF  | BUFF_SIZE |
-            		+--------+--------+-----------+
-            		| '0x05' | '0x01' |  u_int16  |
-            		+--------+--------+-----------+
+            |  CMD   |  CONF  | BUFF_SIZE |
+            +--------+--------+-----------+
+            | '0x05' | '0x01' |  u_int16  |
+            +--------+--------+-----------+
 
 			Where:
 				- BUFF_SIZE: buffer size for communication
@@ -211,10 +211,10 @@ Data types supported:
 		3.5.3 Response
 	
 			+--------+--------+----------+
-            		|  CMD   |  CONF  |  STATUS  |
-            		+--------+--------+----------+
-            		| '0x05' | u_int8 |  u_int8  |
-            		+--------+--------+----------+
+            |  CMD   |  CONF  |  STATUS  |
+            +--------+--------+----------+
+            | '0x05' | u_int8 |  u_int8  |
+            +--------+--------+----------+
 
 			Where:
 				- CONF: same value as the configuration requested

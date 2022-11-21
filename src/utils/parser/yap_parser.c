@@ -22,23 +22,24 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         if (yap_parser_is_valid_command(byte) && parser->command == YAP_NO_COMMAND) {
             parser->command = byte;
             switch (byte) {
-            case YAP_COMMANDS_USERS:
-                return YAP_PARSER_FINISH;
-                break;
-            case YAP_COMMANDS_METRICS:
-                parser->state = YAP_STATE_METRIC;
-                break;
-            case YAP_COMMANDS_ADD_USER:
-                parser->state = YAP_STATE_ADD_USER;
-                break;
-            case YAP_COMMANDS_REMOVE_USER:
-                parser->state = YAP_STATE_REMOVE_USER;
-                break;
-            case YAP_COMMANDS_CONFIG:
-                parser->state = YAP_STATE_CONFIG;
-                break;
-            default:
-                return YAP_PARSER_ERROR;
+                case YAP_COMMANDS_USERS:
+                    parser->state=YAP_STATE_USER;
+                    return YAP_PARSER_FINISH;
+                    break;
+                case YAP_COMMANDS_METRICS:
+                    parser->state = YAP_STATE_METRIC;
+                    break;
+                case YAP_COMMANDS_ADD_USER:
+                    parser->state = YAP_STATE_ADD_USER;
+                    break;
+                case YAP_COMMANDS_REMOVE_USER:
+                    parser->state = YAP_STATE_REMOVE_USER;
+                    break;
+                case YAP_COMMANDS_CONFIG:
+                    parser->state = YAP_STATE_CONFIG;
+                    break;
+                default:
+                    return YAP_PARSER_ERROR;
             }
             log_debug("Comando correcto %d", byte);
             return YAP_PARSER_NOT_FINISHED;
