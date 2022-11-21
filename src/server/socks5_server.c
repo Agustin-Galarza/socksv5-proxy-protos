@@ -23,8 +23,6 @@
 
 #define MAX_CLIENTS_AMOUNT 500
 
-#define CLIENT_BUFFER_SIZE 1024
-
 #define SOCKS_VER_BYTE 0x5
 #define SOCKS_AUTH_VER_BYTE 0x01
 
@@ -71,6 +69,25 @@ enum socks5_reply_status {
     COMMAND_NOT_SUPPORTED,
     ADDRESS_TYPE_NOT_SUPPORTED
 };
+
+enum metric_index {
+    HISTORIC_CONNECTIONS,
+    CONCURRENT_CONNECTIONS,
+    BYTES_SENT
+};
+
+struct server_metric {
+    enum metric_index index;
+    uint16_t value;
+};
+
+static struct socks5_server_metrics
+{
+    uint16_t historic_connections;
+    uint16_t concurrent_connections;
+    uint32_t bytes_sent;
+} server_metrics = { 0 };
+
 
 enum socks5_auth_reply_status {
     SOCKS5_AUTH_SUCCESS = 0,
@@ -248,6 +265,8 @@ static struct addrinfo addrinfo_hint = {
     .ai_protocol = IPPROTO_TCP,
     .ai_flags = AI_NUMERICSERV,
 };
+
+static uint16_t client_buffer_size = 1024;
 
 /*******************************************
 |          Function declarations          |
@@ -569,11 +588,11 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
     struct client_data* data = malloc(sizeof(struct client_data));
 
     data->read_buffer = malloc(sizeof(struct buffer));
-    buffer_init(data->read_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE + 1));
+    buffer_init(data->read_buffer, client_buffer_size, malloc(client_buffer_size + 1));
     data->read_buff_raw = NULL; // TODO: check if necessary
 
     data->write_buffer = malloc(sizeof(struct buffer));
-    buffer_init(data->write_buffer, CLIENT_BUFFER_SIZE, malloc(CLIENT_BUFFER_SIZE + 1));
+    buffer_init(data->write_buffer, client_buffer_size, malloc(client_buffer_size + 1));
     data->write_buff_raw = NULL; // TODO: check if necessary
 
     data->origin_fd = NO_SOCKET;
@@ -637,6 +656,8 @@ void socks5_free_client_data(struct client_data* data) {
             break;
         }
     }
+    server_metrics.concurrent_connections--;
+    socks5_server_data.client_count--;
     free(data);
 }
 
@@ -766,8 +787,9 @@ read_hello(struct selector_key* key) {
         return CONNECTION_ERROR;
     }
 
-    //Todo: fix
-    int bytes_read = read(key->fd, client->write_buffer->data, CLIENT_BUFFER_SIZE);
+    size_t max_write;
+    uint8_t* buffer_raw = buffer_write_ptr(client->write_buffer, &max_write);
+    int bytes_read = read(key->fd, buffer_raw, max_write);
 
     if (bytes_read == 0)
         return CONNECTION_DONE;
@@ -885,7 +907,9 @@ static void authentication_read_close(const unsigned state, struct selector_key*
 static unsigned read_authentication(struct selector_key* key) {
     struct auth_struct* client = &GET_DATA(key)->client.auth;
 
-    int bytes_read = read(key->fd, client->write_buffer->data, CLIENT_BUFFER_SIZE);
+    size_t max_write;
+    uint8_t* buffer_raw = buffer_write_ptr(client->write_buffer, &max_write);
+    int bytes_read = read(key->fd, buffer_raw, max_write);
 
     switch (bytes_read) {
     case -1:
@@ -989,6 +1013,9 @@ static unsigned write_authentication(struct selector_key* key) {
 
 static void address_req_init(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
+
+    server_metrics.historic_connections++;
+    server_metrics.concurrent_connections++;
 
     log_debug("Requesting address from client");
 
@@ -1383,6 +1410,10 @@ static unsigned sniff_write(struct selector_key* key) {
         return CONNECTION_ERROR;
     }
 
+    if (*source->fd == GET_DATA(key)->origin_fd) {
+        server_metrics.bytes_sent += send_status;
+    }
+
     buffer_read_adv(source->read_buffer, send_status);
 
     set_interests(key, (struct copy_struct*)source);
@@ -1399,7 +1430,7 @@ static unsigned sniff_read(struct selector_key* key) {
     int ammount_read = read(*source->fd, source_buff_raw, max_write);
     switch (ammount_read) {
     case -1:
-        log_error("Could not read from : %s", source->to_str, strerror(errno));
+        log_error("Could not read from %s: %s", source->to_str, strerror(errno));
         return CONNECTION_ERROR;
     case 0:
         // Cuando un socket manda EOF, deja de enviar bytes
@@ -1508,6 +1539,10 @@ static unsigned copy_write(struct selector_key* key) {
         return CONNECTION_ERROR;
     }
 
+    if (*source->fd == GET_DATA(key)->origin_fd) {
+        server_metrics.bytes_sent += send_status;
+    }
+
     buffer_read_adv(source->read_buffer, send_status);
 
     set_interests(key, source);
@@ -1524,7 +1559,7 @@ static unsigned copy_read(struct selector_key* key) {
     int ammount_read = read(*source->fd, source_buff_raw, max_write);
     switch (ammount_read) {
     case -1:
-        log_error("Could not read from : %s", source->to_str, strerror(errno));
+        log_error("Could not read from  %s: %s", source->to_str, strerror(errno));
         return CONNECTION_ERROR;
     case 0:
         // Cuando un socket manda EOF, deja de enviar bytes
@@ -1563,6 +1598,7 @@ static void close_connection_normally(const unsigned state, struct selector_key*
     if (client->status != CLOSING) {
         client->status = CLOSING;
         socks5_unregister_client(client);
+        log_debug("Closing both ends of client");
         close(client->client_fd);
         if (client->origin_fd > 0) {
             close(client->origin_fd);
@@ -1571,6 +1607,7 @@ static void close_connection_normally(const unsigned state, struct selector_key*
         socks5_free_client_data(client);
         return;
     }
+    log_debug("Closing client %s", client->client_str);
     close(key->fd);
     socks5_free_client_data(client);
 }
@@ -1606,4 +1643,22 @@ struct copy_struct* get_copy_struct_ptr(struct selector_key* key) {
 
 struct sniff_struct* get_sniff_struct_ptr(struct selector_key* key) {
     return key->fd == GET_DATA(key)->client_fd ? &GET_DATA(key)->client.sniff : &GET_DATA(key)->origin.sniff;
+}
+
+uint16_t socks5_get_historic_connections() {
+    return server_metrics.historic_connections;
+}
+
+uint16_t socks5_get_concurrent_connections() {
+    return server_metrics.concurrent_connections;
+}
+
+uint16_t socks5_get_bytes_sent() {
+    log_debug("Bytes: %ld", server_metrics.bytes_sent);
+    return server_metrics.bytes_sent >> 10;
+}
+
+void socks5_update_client_buffer_size(uint16_t new_size) {
+    log_debug("Client buffer updated");
+    client_buffer_size = new_size;
 }

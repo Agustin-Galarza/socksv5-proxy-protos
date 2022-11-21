@@ -10,6 +10,7 @@
 #include <assert.h>
 
 #include "server/admin_server.h"
+#include "server/socks5_server.h"
 #include "utils/stm.h"
 #include "logger/logger.h"
 #include "utils/buffer.h"
@@ -121,6 +122,7 @@ static void get_metric(void* metric);
 static void add_user(void* user);
 static void remove_user(void* user);
 static struct config_change_request {
+    fd_selector selector;
     uint8_t config_number;
     uint16_t new_value;
 };
@@ -516,7 +518,7 @@ static unsigned read_cmd_request(struct selector_key* key) {
     return ADMIN_SERVER_STATE_CMD_REQ;
 }
 
-static void* build_cmd_args(struct yap_parser* parser) {
+static void* build_cmd_args(fd_selector selector, struct yap_parser* parser) {
     switch (parser->command) {
     case YAP_COMMANDS_USERS:
         return NULL;
@@ -585,7 +587,7 @@ cmd_res_init(const unsigned int state, struct selector_key* key) {
     }
 
     // Resolver el comando solicitado
-    void* args = build_cmd_args(admin->cmd_parser);
+    void* args = build_cmd_args(admin->selector, admin->cmd_parser);
     cmd_handlers[admin->cmd_parser->command - 1](args);
     free_cmd_args(admin->cmd_parser->command, args);
     // Armar el buffer de respuesta
@@ -688,7 +690,23 @@ static void get_all_users(void* _) {
 }
 
 static void get_metric(void* metric) {
-    log_warning("TODO: métrica");
+    uint8_t metric_num = *((uint8_t*)metric);
+    uint16_t value;
+    switch (metric_num) {
+    case YAP_METRIC_HISTORICAL_CONNECTIONS:
+        value = socks5_get_historic_connections();
+        break;
+    case YAP_METRIC_CONCURRENT_CONNECTIONS:
+        value = socks5_get_concurrent_connections();
+        break;
+    case YAP_METRIC_BYTES_SEND:
+        value = socks5_get_bytes_sent();
+        break;
+    }
+    uint16_t nvalue = htons(value);
+    *payload.data = metric_num;
+    memcpy(payload.data + 1, &nvalue, sizeof(uint16_t));
+    payload.size = 1 + sizeof(uint16_t);
 }
 
 #define OK_STATUS 0x00
@@ -713,8 +731,20 @@ static void remove_user(void* user) {
 }
 
 static void set_config(void* config) {
-    log_warning("TODO");
+    struct config_change_request* conf_req = config;
 
+    struct timespec tv;
+    switch (conf_req->config_number) {
+    case YAP_CONFIG_TIMEOUTS:
+        tv.tv_nsec = 0;
+        tv.tv_sec = conf_req->new_value;
+
+        selector_set_timeout(conf_req->selector, tv);
+        break;
+    case YAP_CONFIG_BUFFER_SIZE:
+        socks5_update_client_buffer_size(conf_req->new_value);
+        break;
+    }
 }
 
 user_list_t* admin_server_get_allowed_users() {
