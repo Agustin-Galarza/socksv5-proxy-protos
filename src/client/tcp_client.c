@@ -13,12 +13,12 @@ int main(int argc, char* argv[]) {
         .port = 1080, // default port
         .version = 4, //default version
     };
-    
-    int tries=0;
-    uint16_t status = FAILED_AUTH;
-    uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
 
-    struct yap_parser * parser = yap_parser_init();
+    int tries = 0;
+    uint16_t status = FAILED_AUTH;
+    uint8_t username[CREDS_LEN] = { 0 }, password[CREDS_LEN] = { 0 };
+
+    struct yap_parser* parser = yap_parser_init();
 
 
     if (!parse_conf(argc, argv, &conf)) {
@@ -31,40 +31,43 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in ipv4_address;
     unsigned short port = conf.port;
 
-    if (conf.version == 6 ){
+    if (conf.version == 6) {
         printf("Connecting to IPv6\n");
         sock = connect_to_ipv6(&ipv6_address, port, conf.addr);
     }
-    else{
+    else {
         printf("Connecting to IPv4\n");
         sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
     }
-    
-    if(sock < 0){
+
+    if (sock < 0) {
         exit_status = -1;
         goto finish;
     }
 
     printf("Successfully connected\n");
 
-    while(status != SUCCESS_AUTH){
+    while (status != SUCCESS_AUTH) {
 
         //TODO mandar credenciales al servidor
-        if(ask_credentials(username, password) < 0)
+        if (ask_credentials(username, password) < 0)
             continue;
 
-        if(tries++ >= MAX_AUTH_TRIES){
+        if (tries++ >= MAX_AUTH_TRIES) {
             printf("Max number of tries reached\n");
             exit_status = -1;
             close_connection(sock);
             goto finish;
         }
 
-        if(send_credentials(sock, username, password) < 0){
+        if (send_credentials(sock, username, password) < 0) {
             close_connection(sock);
             exit_status = -1;
             goto finish;
         }
+
+        uint8_t buff[10];
+        read(sock, buff, 10);
 
         status = SUCCESS_AUTH;
 
@@ -76,17 +79,17 @@ int main(int argc, char* argv[]) {
     print_welcome();
 
 
-    while (status == CONNECTED){
+    while (status == CONNECTED) {
 
-        if(ask_command(sock, parser) < 0){
+        if (ask_command(sock, parser) < 0) {
             close_connection(sock);
             exit_status = -1;
             goto finish;
         }
     }
 
-finish:    
-            yap_parser_free(parser);
+finish:
+    yap_parser_free(parser);
 
 
     return exit_status;
