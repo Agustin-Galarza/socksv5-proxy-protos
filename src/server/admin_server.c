@@ -294,6 +294,15 @@ void admin_data_free(struct admin_data* admin) {
             free(admin->read_buffer);
         }
 
+        for (size_t i = 0; i < admin_server_data.client_count; i++) {
+            if (admins[i] == admin) {
+                admins[i] = NULL;
+                break;
+            }
+        }
+        admin_server_data.client_count--;
+
+
         free(admin);
     }
 }
@@ -435,16 +444,11 @@ static void
 authentication_res_close(const unsigned int state, struct selector_key* key) {
     struct admin_data* admin = key->data;
 
-    enum yap_negociation_status status = admin->negotiation_parser->status;
-
     strncpy(admin->admin_str, (char*)admin->negotiation_parser->username, admin->negotiation_parser->username_len);
     admin->admin_str[admin->negotiation_parser->username_len] = '\0';
 
     yap_negociation_parser_free(admin->negotiation_parser);
     admin->negotiation_parser = NULL;
-
-    if (status != AUTH_SUCCESS)
-        close_connection(ADMIN_SERVER_STATE_DONE, key);
 
     log_info("Admin Authorized: %s", admin->admin_str);
 
@@ -470,9 +474,14 @@ static unsigned write_authentication_response(struct selector_key* key) {
     size_t bytes_sent = (size_t)send_status;
     buffer_read_adv(admin->read_buffer, bytes_sent);
 
-    if (bytes_sent == bytes_to_send)
-        return ADMIN_SERVER_STATE_CMD_REQ;
-
+    if (bytes_sent == bytes_to_send) {
+        if (admin->negotiation_parser->status != AUTH_SUCCESS) {
+            return ADMIN_SERVER_STATE_DONE;
+        }
+        else {
+            return ADMIN_SERVER_STATE_CMD_REQ;
+        }
+    }
     return ADMIN_SERVER_STATE_AUTHENTICATION_RES;
 }
 
@@ -657,7 +666,6 @@ close_connection(const unsigned int state, struct selector_key* key) {
     }
     close(admin->admin_fd);
     admin_data_free(admin);
-    admin_server_data.client_count--;
 }
 
 static void get_all_users(void* _) {
