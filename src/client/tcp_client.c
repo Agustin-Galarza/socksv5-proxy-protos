@@ -10,7 +10,6 @@ int main(int argc, char* argv[]) {
     int exit_status = 0;
     char* err_msg, * success_msg = "OK!\n";
     tcp_conf conf = {
-        .addr = "127.0.0.1", // default address
         .port = 1080, // default port
         .version = 4, //default version
     };
@@ -18,10 +17,7 @@ int main(int argc, char* argv[]) {
     int tries=0;
     uint16_t status = FAILED_AUTH;
     uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
-    
 
-    buffer * cmd = malloc(sizeof(buffer*));
-    cmd->data = malloc(sizeof(uint8_t)*BUFF_SIZE);
 
     if (!parse_conf(argc, argv, &conf)) {
         err_msg = "Error parsing configuration from arguments";
@@ -49,14 +45,6 @@ int main(int argc, char* argv[]) {
 
     printf("Successfully connected\n");
 
-
-    /*
-        read al socket
-                primer byte cantidad de bytes a leer
-
-    */
-
-
     while(status != SUCCESS_AUTH){
 
         if(ask_credentials(username, password) < 0)
@@ -64,7 +52,8 @@ int main(int argc, char* argv[]) {
 
         if(tries++ >= MAX_AUTH_TRIES){
             printf("Max number of tries reached\n");
-            exit_status = close_connection(sock);
+            exit_status = -1;
+            close_connection(sock);
             goto finish;
         }
 
@@ -74,20 +63,39 @@ int main(int argc, char* argv[]) {
             goto finish;
         }
 
-        struct yap_parser * parser = yap_parser_init();
-
-        enum yap_result res = yap_parser_consume(cmd, parser);
-
-        print_response(cmd->data, parser, sock);
-
-        free(parser);
-
         status = SUCCESS_AUTH;
 
         putchar('\n');
     }
 
+    status = CONNECTED;
+
+    print_welcome();
+
+
+    buffer * cmd = malloc(sizeof(buffer*)* BUFF_SIZE);
+    cmd->data = malloc(sizeof(uint8_t*) * BUFF_SIZE);
+    cmd->read = malloc(sizeof(uint8_t*) * BUFF_SIZE);
+    cmd->write = malloc(sizeof(uint8_t*) * BUFF_SIZE);
+    uint8_t * buff = malloc(BUFF_SIZE*sizeof(uint8_t*));
+
+    buffer_init(cmd, BUFF_SIZE, buff);
+
+    struct yap_parser * parser = yap_parser_init();
+
+
+    while (status == CONNECTED){
+
+        if(ask_command(sock, parser) < 0){
+            close_connection(sock);
+            exit_status = -1;
+            goto finish;
+        }
+    }
+
 finish:     free(cmd->data);
+            free(cmd->read);
+            free(cmd->write);
             free(cmd);
 
 

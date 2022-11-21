@@ -9,18 +9,13 @@
 #include "utils/util.h"
 #include "client/tcp_client_util.h"
 
-char * queries[] = {"thc", "cc", "tbs", "ul"};
-char * query_description[] = {
-    "thc - Get Total Historical Connections",
-    "cc - Get Concurrent Connections",
-    "tbs - Get Total Bytes Sent",
-    "ul - Get User List"
-};
-
-char * modifiers[] = {"au", "ru"};
-char * modifier_description[] = {
+char * commands[] = {"ul", "m", "au", "ru", "c"};
+char * cmd_description[] = {
+    "ul - Get User List",
+    "m  - Select from a list of metrics",
     "au - Add User",
-    "ru - Remove User"
+    "ru - Remove User",
+    "c  - Select from a list of configurations"
 };
 
 char * builtin_names[] = {"help", "quit"};
@@ -123,22 +118,72 @@ int ask_password(uint8_t * password){
     return strlen((char *) password);
 }
 
+int ask_command(int socket, struct yap_parser * parser){
+    char cmd[COMMAND_LEN];
+    printf("$> ");
 
-int print_response(uint8_t * cmd,  struct yap_parser * parser, int socket){
-    switch(*cmd){
-        case LIST_USERS:
+    fflush(stdout);
+
+    if(!fgets((char *) cmd, COMMAND_LEN, stdin))
+        return -1;
+
+    char * end = strchr((char *) cmd, '\n');
+    if(end == NULL){
+        printf("Invalid command\n");
+        handle_help(socket);
+        while(getc(stdin) != '\n');
+        return 0;
+    }
+    else
+        cmd[end-(char *) cmd] = 0; 
+
+    for(int i = 0; i < BUILTIN_TOTAL; i++){
+        if(!strcmp(builtin_names[i], cmd)){
+            builtin[i](socket);
+            return 0;
+        }
+    }
+
+    uint8_t command = 0;
+    for(int i = 0; i < CMD_TOTAL; i++){
+        if(strcmp(commands[i], cmd) == 0){
+            command = i+1;
+            break;
+        }
+    }
+
+    if(command == 0){
+        printf("Invalid command: %s\n", cmd);
+        handle_help(socket);
+        return 0;
+    }
+
+    parser->command = 0;
+
+    enum yap_result res = yap_parser_feed(parser, command);
+    print_response(parser, socket);
+
+
+    return 0;
+}
+
+
+
+int print_response(struct yap_parser * parser, int socket){
+    switch(parser->state){
+        case YAP_STATE_USER:
             return print_user_list(socket);
+
+        case YAP_STATE_METRIC:
+            return print_metric(socket); 
             
-        case ADD_USER:
+        case YAP_STATE_ADD_USER:
             return print_added_user(parser);
 
-        case REMOVE_USER:
+        case YAP_STATE_REMOVE_USER:
             return print_removed_user(parser);
 
-        case METRIC:
-            return print_metric(socket); 
-
-        case CONFIG:
+        case YAP_STATE_CONFIG:
             return print_config(socket);
         }
     return -1;
@@ -154,6 +199,7 @@ int print_removed_user(struct yap_parser * parser){
 
 
 int print_metric(int socket){
+    printf("Entered metrics\n");
     char * buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
     if (bytes == 0)
@@ -186,6 +232,22 @@ int print_bytes_sent(char* buffer){
 }
 
 int print_user_list(int socket){
+
+    printf("Entered user list\n");
+
+    struct yap_parser * parser = yap_parser_init();
+
+    // enum yap_result res = yap_parser_consume(cmd, parser);
+    // while(res == YAP_PARSER_NOT_FINISHED){
+    //     res = yap_parser_consume(1, parser);
+    // }
+    
+
+    // if (res == YAP_PARSER_ERROR){
+    //     close_connection(sock);
+    //     exit_status = -1;
+    //     goto finish;
+    // }
     char * buffer = malloc(BUFF_SIZE);
 
     size_t bytes = read(socket, buffer, BUFF_SIZE);
@@ -213,6 +275,7 @@ int print_user_list(int socket){
 }
 
 int print_config(int socket){
+    printf("Entered print config\n");
     char * buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
     if (bytes == 0)
@@ -301,15 +364,9 @@ void print_welcome(){
 
 
 void handle_help(int sock_fd){
-    printf("Socks5 proxy client\n");
-    printf("Entries follow the format: <command> - <description>\n\n");
-    printf("Query methods:\n");
-    for(int i = 0; i < QUERIES_TOTAL; i++)
-        printf("%s\n", query_description[i]);
-
-    printf("\nModification methods:\n");
-    for(int i = 0; i < MODIFIERS_TOTAL; i++)
-        printf("%s\n", modifier_description[i]);
+    printf("List of supported commands:\n");
+    for(int i = 0; i < CMD_TOTAL; i++)
+        printf("%s\n", cmd_description[i]);
 }
 
 void handle_quit(int sock_fd){

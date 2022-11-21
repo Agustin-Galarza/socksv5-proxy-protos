@@ -35,6 +35,7 @@ enum yap_commands {
 
 enum yap_states {
     YAP_STATE_COMMAND,
+    YAP_STATE_USER,
     YAP_STATE_METRIC,
     YAP_STATE_ADD_USER,
     YAP_STATE_ADD_PASS,

@@ -19,19 +19,20 @@
 #define PARAMS_LEN 64
 #define NUMERIC_INPUT_LEN 32
 #define USER_LIST 7
-#define QUERIES_TOTAL 4
-#define MODIFIERS_TOTAL 2
 #define SUCCESS_AUTH 0
 #define FAILED_AUTH 1
-#define COMMAND_MAX_LEN 64
+#define CONNECTED 0
+#define TERMINATE 1
+#define COMMAND_LEN 64
 #define BUILTIN_TOTAL 2
+#define CMD_TOTAL 5
 
 
-#define LIST_USERS 1
-#define METRIC 2
-#define ADD_USER 3
-#define REMOVE_USER 4
-#define CONFIG 5
+// #define LIST_USERS 1
+// #define METRIC 2
+// #define ADD_USER 3
+// #define REMOVE_USER 4
+// #define CONFIG 5
 
 #define HISTORICAL_CONNECTIONS 0
 #define CONCURRENT_CONNECTIONS 1
@@ -47,12 +48,13 @@ int connect_to_ipv6(struct sockaddr_in6 * ipv6_address, unsigned short port,char
 int ask_credentials(uint8_t * username, uint8_t * password);
 int ask_username(uint8_t * username);
 int ask_password(uint8_t * password);
+int ask_command(int socket, struct yap_parser * parser);
 
 int send_credentials(int socket_fd, uint8_t * username, uint8_t * password);
 int send_string(uint8_t socket_fd, uint8_t len, uint8_t * array);
 
 void print_status(uint16_t status);
-int print_response(uint8_t * cmd, struct yap_parser * parser, int socket);
+int print_response(struct yap_parser * parser, int socket);
 void print_welcome();
 int print_added_user(struct yap_parser * parser);
 int print_removed_user(struct yap_parser * parser);
