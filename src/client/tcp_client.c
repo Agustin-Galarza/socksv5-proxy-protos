@@ -18,6 +18,8 @@ int main(int argc, char* argv[]) {
     uint16_t status = FAILED_AUTH;
     uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
 
+    struct yap_parser * parser = yap_parser_init();
+
 
     if (!parse_conf(argc, argv, &conf)) {
         err_msg = "Error parsing configuration from arguments";
@@ -47,6 +49,7 @@ int main(int argc, char* argv[]) {
 
     while(status != SUCCESS_AUTH){
 
+        //TODO mandar credenciales al servidor
         if(ask_credentials(username, password) < 0)
             continue;
 
@@ -73,17 +76,6 @@ int main(int argc, char* argv[]) {
     print_welcome();
 
 
-    buffer * cmd = malloc(sizeof(buffer*)* BUFF_SIZE);
-    cmd->data = malloc(sizeof(uint8_t*) * BUFF_SIZE);
-    cmd->read = malloc(sizeof(uint8_t*) * BUFF_SIZE);
-    cmd->write = malloc(sizeof(uint8_t*) * BUFF_SIZE);
-    uint8_t * buff = malloc(BUFF_SIZE*sizeof(uint8_t*));
-
-    buffer_init(cmd, BUFF_SIZE, buff);
-
-    struct yap_parser * parser = yap_parser_init();
-
-
     while (status == CONNECTED){
 
         if(ask_command(sock, parser) < 0){
@@ -93,10 +85,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-finish:     free(cmd->data);
-            free(cmd->read);
-            free(cmd->write);
-            free(cmd);
+finish:    
+            yap_parser_free(parser);
 
 
     return exit_status;
