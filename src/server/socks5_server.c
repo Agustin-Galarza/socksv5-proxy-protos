@@ -223,8 +223,6 @@ struct client_data
 
 
     // Buffers
-    uint8_t* write_buff_raw;
-    uint8_t* read_buff_raw;
     struct buffer* write_buffer;
     struct buffer* read_buffer;
 
@@ -275,9 +273,6 @@ static uint16_t client_buffer_size = 1024;
 /*******************************************
 |          Function declarations          |
 *******************************************/
-
-// static struct copy_endpoint_old
-// get_endpoint(struct selector_key* key);
 
 void socks5_server_handle_read(struct selector_key* key);
 const struct fd_handler
@@ -378,6 +373,8 @@ static unsigned sniff_read(struct selector_key* key);
 
 // DONE - ERROR
 static void close_connection_normally(const unsigned state, struct selector_key* key);
+
+///////////////////////////////////////////
 
 uint8_t choose_socks5_method(uint8_t methods[2]);
 
@@ -595,11 +592,9 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
 
     data->read_buffer = malloc(sizeof(struct buffer));
     buffer_init(data->read_buffer, client_buffer_size, malloc(client_buffer_size + 1));
-    data->read_buff_raw = NULL; // TODO: check if necessary
 
     data->write_buffer = malloc(sizeof(struct buffer));
     buffer_init(data->write_buffer, client_buffer_size, malloc(client_buffer_size + 1));
-    data->write_buff_raw = NULL; // TODO: check if necessary
 
     data->origin_fd = NO_SOCKET;
 
@@ -655,9 +650,6 @@ void socks5_free_client_data(struct client_data* data) {
     // Remove client register
     for (size_t i = 0; i < socks5_server_data.client_count; i++) {
         if (clients[i] == data) {
-            // for (size_t j = i + 1; j < socks5_server_data.client_count; j++)
-            //     clients[i] = clients[j];
-            // clients[socks5_server_data.client_count] = NULL;
             clients[i] = NULL;
             break;
         }
@@ -687,7 +679,7 @@ socket_descriptor socks5_try_connect(struct client_data* data) {
     // crear el socket
     socket_descriptor new_client_socket = socket(origin_addr->ai_family, origin_addr->ai_socktype, origin_addr->ai_protocol);
     if (new_client_socket == NO_SOCKET) {
-        free_addrinfo_on_error(origin_addr, "Could not create socket on "); //TODO: check
+        free_addrinfo_on_error(origin_addr, "Could not create socket on ");
         return NO_SOCKET;
     }
     // configurar el socket como no bloqueante
@@ -1109,7 +1101,7 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
 
         addr_len = sizeof(struct sockaddr_in);
         addr_info->ai_addrlen = addr_len;
-        addr_in = malloc(addr_len); // TODO: free this
+        addr_in = malloc(addr_len);
         memset(addr_in, 0, addr_len);
         addr_in->sin_family = AF_INET;
         addr_in->sin_port = (in_port_t)*client->parser->port;
@@ -1516,8 +1508,6 @@ static void sniff_n_copy_init(const unsigned state, struct selector_key* key) {
     if (state == SNIFF)
         ((struct sniff_struct*)origin)->parser = NULL;
 
-    // selector_set_interest(key->s, *client->fd, OP_READ);
-    // selector_set_interest(key->s, *origin->fd, OP_READ);
     set_interests(key, client);
     set_interests(key, origin);
 }
@@ -1637,10 +1627,7 @@ void set_interests(struct selector_key* key, struct copy_struct* ep) {
     if (CAN_WRITE(ep->duplex) && buffer_can_read(ep->read_buffer)) {
         interest |= OP_WRITE;
     }
-    if (selector_set_interest(key->s, *ep->fd, interest) != SELECTOR_SUCCESS) {
-        log_error("Could not set interests for %s", ep->to_str);
-        //TODO: handle error
-    }
+    selector_set_interest(key->s, *ep->fd, interest);
 }
 
 struct copy_struct* get_copy_struct_ptr(struct selector_key* key) {

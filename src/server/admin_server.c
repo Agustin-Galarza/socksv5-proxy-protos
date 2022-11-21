@@ -298,7 +298,6 @@ void admin_data_free(struct admin_data* admin) {
     }
 }
 
-// TODO: general
 static socket_descriptor
 accept_new_connection(socket_descriptor server_socket) {
     struct sockaddr_storage admin_addr;
