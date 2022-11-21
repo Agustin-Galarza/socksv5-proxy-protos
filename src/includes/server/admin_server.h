@@ -15,10 +15,6 @@ const struct fd_handler* get_admin_server_handlers();
 
 user_list_t* admin_server_get_allowed_users();
 
-struct admin_server_data
-{
-    size_t max_clients;
-    size_t client_count;
-} admin_server_data;
+extern struct admin_server_data admin_server_data;
 
 #endif

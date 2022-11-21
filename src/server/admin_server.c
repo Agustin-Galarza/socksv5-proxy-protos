@@ -83,6 +83,12 @@ static struct admin_data* admins[MAX_ADMINS] = { 0 };
 
 static enum server_status server_status = ADMIN_SERVER_STATUS_OK;
 
+struct admin_server_data
+{
+    size_t max_clients;
+    size_t client_count;
+} admin_server_data;
+
 /*******************************************
 |          Function declarations          |
 *******************************************/

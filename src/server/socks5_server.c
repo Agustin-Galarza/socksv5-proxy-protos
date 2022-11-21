@@ -264,6 +264,12 @@ static struct addrinfo addrinfo_hint = {
     .ai_flags = AI_NUMERICSERV,
 };
 
+struct socks5_server_data
+{
+    size_t max_clients;
+    size_t client_count;
+} socks5_server_data;
+
 static uint16_t client_buffer_size = 1024;
 
 /*******************************************
@@ -468,7 +474,9 @@ static const struct state_definition socks5_states[] = {
 |          Function Implementations          |
 **********************************************/
 
-bool socks5_init_server() {
+bool socks5_init_server(size_t max_clients) {
+    socks5_server_data.client_count = 0;
+    socks5_server_data.max_clients = max_clients;
     clients = calloc(MAX_CLIENTS_AMOUNT, sizeof(struct client_data*));
     sniffed_users = user_list_init(MAX_CLIENTS_AMOUNT);
     return false;

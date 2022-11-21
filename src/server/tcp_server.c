@@ -215,7 +215,7 @@ struct server_sockets
     memset(&sockets, NO_SOCKET, sizeof(sockets));
 
     // Run initialization scripts
-    if (socks5_init_server()) {
+    if (socks5_init_server(config->max_clients)) {
         log_error("Could not initialize socks5 server");
         return sockets;
     }
@@ -286,10 +286,6 @@ struct server_sockets
 
         return sockets;
     }
-
-    // Setup server data
-    socks5_server_data.client_count = 0;
-    socks5_server_data.max_clients = config->max_clients;
 
     return sockets;
 }
