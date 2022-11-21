@@ -31,25 +31,24 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in ipv4_address;
     unsigned short port = conf.port;
 
-    if (conf.version == 6) {
-        printf("Connecting to IPv6\n");
-        sock = connect_to_ipv6(&ipv6_address, port, conf.addr);
-    }
-    else {
-        printf("Connecting to IPv4\n");
-        sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
-    }
-
-    if (sock < 0) {
-        exit_status = -1;
-        goto finish;
-    }
-
-    printf("Successfully connected\n");
-
     while (status != SUCCESS_AUTH) {
 
-        //TODO mandar credenciales al servidor
+        if (conf.version == 6) {
+            printf("Connecting to IPv6\n");
+            sock = connect_to_ipv6(&ipv6_address, port, conf.addr);
+        }
+        else {
+            printf("Connecting to IPv4\n");
+            sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
+        }
+
+        if (sock < 0) {
+            exit_status = -1;
+            goto finish;
+        }
+
+        printf("Successfully connected\n");  // TODO: remove
+
         if (ask_credentials(username, password) < 0)
             continue;
 
@@ -66,11 +65,20 @@ int main(int argc, char* argv[]) {
             goto finish;
         }
 
-        // TODO: check server response
-        uint8_t buff[10];
-        read(sock, buff, 10);
+        const size_t server_response_size = 2;
+        uint8_t buff[server_response_size];
 
-        status = SUCCESS_AUTH;
+        errno = 0;
+        int bytes_read = read(sock, buff, server_response_size);
+        if (bytes_read == -1) {
+            fprintf(stderr, "Could not read response from server: %s", strerror(errno));
+            close_connection(sock);
+            exit_status = -1;
+            goto finish;
+        }
+
+        status = buff[1];
+        printf("Status: %d", status); // TODO: remove
 
         putchar('\n');
     }
