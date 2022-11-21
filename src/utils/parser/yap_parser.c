@@ -22,23 +22,24 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         if (yap_parser_is_valid_command(byte) && parser->command == YAP_NO_COMMAND) {
             parser->command = byte;
             switch (byte) {
-            case YAP_COMMANDS_USERS:
-                return YAP_PARSER_FINISH;
-                break;
-            case YAP_COMMANDS_METRICS:
-                parser->state = YAP_STATE_METRIC;
-                break;
-            case YAP_COMMANDS_ADD_USER:
-                parser->state = YAP_STATE_ADD_USER;
-                break;
-            case YAP_COMMANDS_REMOVE_USER:
-                parser->state = YAP_STATE_REMOVE_USER;
-                break;
-            case YAP_COMMANDS_CONFIG:
-                parser->state = YAP_STATE_CONFIG;
-                break;
-            default:
-                return YAP_PARSER_ERROR;
+                case YAP_COMMANDS_USERS:
+                    parser->state=YAP_STATE_USER;
+                    return YAP_PARSER_FINISH;
+                    break;
+                case YAP_COMMANDS_METRICS:
+                    parser->state = YAP_STATE_METRIC;
+                    break;
+                case YAP_COMMANDS_ADD_USER:
+                    parser->state = YAP_STATE_ADD_USER;
+                    break;
+                case YAP_COMMANDS_REMOVE_USER:
+                    parser->state = YAP_STATE_REMOVE_USER;
+                    break;
+                case YAP_COMMANDS_CONFIG:
+                    parser->state = YAP_STATE_CONFIG;
+                    break;
+                default:
+                    return YAP_PARSER_ERROR;
             }
             log_debug("Comando correcto %d", byte);
             return YAP_PARSER_NOT_FINISHED;
@@ -123,11 +124,18 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         }
         break;
     case YAP_STATE_CONFIG_VALUE:
-        parser->config_value = ntohs(byte);
-        log_debug("Config value correcta %d", byte);
-        return YAP_PARSER_FINISH;
-        break;
-
+        if (parser->config_index < 2) {
+            parser->config_value = byte;
+            parser->config_index++;
+            log_debug("Config value correcta %d", byte);
+            return YAP_PARSER_NOT_FINISHED;
+            break;
+        }
+        if (parser->config_index == 2) {
+            parser->config_value = ntohs(parser->config_value);
+            return YAP_PARSER_FINISH;
+            break;
+        }
     default:
         return YAP_PARSER_ERROR;
         break;
@@ -149,6 +157,8 @@ void yap_parser_reset(struct yap_parser* parser) {
     parser->state = YAP_STATE_COMMAND;
     parser->command = YAP_NO_COMMAND;
     parser->metric = 0;
+    parser->metric_index = 0;
+    parser->metric_value = 0;
     parser->result = YAP_PARSER_NOT_FINISHED;
     parser->username_length = 0;
     parser->password_length = 0;
@@ -156,6 +166,7 @@ void yap_parser_reset(struct yap_parser* parser) {
     parser->password_current = 0;
     parser->config = 0;
     parser->config_value = 0;
+    parser->config_index = 0;
     memset(parser->username, 0, MAX_USERNAME_LENGTH);
     memset(parser->password, 0, MAX_PASSWORD_LENGTH);
 }
