@@ -209,10 +209,10 @@ int print_response(struct yap_parser* parser, int socket) {
         return print_metric(socket, parser);
 
     case YAP_STATE_ADD_USER:
-        return print_added_user(parser);
+        return print_user_command(socket, parser);
 
     case YAP_STATE_REMOVE_USER:
-        return print_removed_user(parser);
+        return print_user_command(socket, parser);
 
     case YAP_STATE_CONFIG:
         return print_config(socket);
@@ -221,14 +221,42 @@ int print_response(struct yap_parser* parser, int socket) {
     return -1;
 }
 
-int print_added_user(struct yap_parser* parser) {
-    return ntohs(printf("Added user: %s\n", parser->username));
-}
 
-int print_removed_user(struct yap_parser* parser) {
-    return ntohs(printf("Removed user: %s\n", parser->username));
-}
 
+int print_user_command(int socket, struct yap_parser* parser) {
+
+    struct buffer buf;
+    buffer_init(&buf, BUFF_SIZE * 2 + 3, 0);
+
+    buffer_write(&buf, &parser->command);
+
+    uint8_t username[BUFF_SIZE];
+    printf("Enter username: ");
+    handle_input(username);
+    uint8_t username_len = strlen((char*)username);
+    buffer_write(&buf, username_len);
+
+    for (int i = 0; i < username_len; i++)
+        buffer_write(&buf, username[i]);
+
+
+    uint8_t password[BUFF_SIZE];
+    printf("Enter password: ");
+    handle_input(password);
+
+    uint8_t password_len = strlen((char*)password);
+    buffer_write(&buf, password_len);
+
+    for (int i = 0; i < password_len; i++)
+        buffer_write(&buf, password[i]);
+
+
+    send(socket, buf.data, 3 + username_len + password_len, 0);
+
+    printf("$> ");
+
+    return 0;
+}
 
 int print_metric(int socket, struct yap_parser* parser) {
     handle_metrics();
@@ -478,6 +506,22 @@ void handle_help() {
     printf("\nList of supported commands:\n");
     for (int i = 0; i < CMD_TOTAL; i++)
         printf("%s\n", cmd_description[i]);
+}
+
+void handle_input(uint8_t* input) {
+    fflush(stdin);
+    fgets((char*)input, BUFF_SIZE, stdin);
+    clean_input(input);
+    printf("\n");
+    printf("$> ");
+
+}
+
+void clean_input(uint8_t* string) {
+    for (int i = 0; i < strlen((char*)string); i++) {
+        if (string[i] == '\n')
+            string[i] = 0;
+    }
 }
 
 void handle_metrics() {
