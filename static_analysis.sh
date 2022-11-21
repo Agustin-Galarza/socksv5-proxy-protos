@@ -5,7 +5,7 @@ cppcheck_folder=$analysis_folder/cppcheck
 valgrind_output_file=$valgrind_folder/out.txt
 cppc_output_file=$cppcheck_folder/out.txt
 
-default_target=./bin/socks_proxy
+default_target=./bin/socks5d
 
 if [ $# -eq 0 ]
 then
