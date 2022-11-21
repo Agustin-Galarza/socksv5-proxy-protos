@@ -56,22 +56,9 @@ CFLAGS += $(GNU_FLAGS)
 LDFLAGS := $(ASAN_LDFLAGS) $(LDLIBS)
 LDFLAGS += $(GNU_FLAGS)
 
-SV_CFLAGS :=
-
-SV_LDFLAGS :=
-
-CL_CFLAGS :=
-
-CL_LDFLAGS :=
-
-TEST_LDFLAGS :=
-
 ########### Targets
 
 all: server client
-ifdef foo
-	echo "foo is defined"
-endif
 
 server: $(TARGET_DIR)/$(SERVER_COMPILE_TARGET)
 
@@ -80,61 +67,37 @@ client: $(TARGET_DIR)/$(CLIENT_COMPILE_TARGET)
 test: $(TEST_COMPILE_TARGETS)
 
 $(TARGET_DIR)/$(SERVER_COMPILE_TARGET): $(SV_OBJS) $(UT_OBJS)
-	@echo "socks5d target"
-
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(SV_LDFLAGS) $(SV_OBJS) $(UT_OBJS) -o $@
 	@chmod +x $<
 
 $(TARGET_DIR)/$(CLIENT_COMPILE_TARGET): $(CL_OBJS) $(UT_OBJS)
-	@echo "socks5c target"
-
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(CL_LDFLAGS) $(CL_OBJS) $(UT_OBJS) -o $@
 	@chmod +x $<
 
 $(TEST_COMPILE_TARGETS):$(TARGET_DIR)/$(TEST_DIR)/%: $(BUILD_DIR)/$(TEST_DIR)/%.o $(UT_OBJS)
-	@echo "test target"
-	@echo $@
-	@echo $<
-
 	mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) $(TEST_LDFLAGS) $< $(UT_OBJS) -o $@
 	@chmod +x $<
 
 # SV_OBJS
 $(BUILD_DIR)/$(SRC_DIR)/$(SERVER_DIR)/%.o: $(SRC_DIR)/$(SERVER_DIR)/%.c
-	@echo "sv_objs target"
-	@echo $@
-	@echo $<
-
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SV_CFLAGS) $(INC_FLAGS) -c $< -o $@
 
 # CL_OBJS
 $(BUILD_DIR)/$(SRC_DIR)/$(CLIENT_DIR)/%.o: $(SRC_DIR)/$(CLIENT_DIR)/%.c
-	@echo "cl_objs target"
-	@echo $@
-	@echo $<
-
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(CL_CFLAGS) $(INC_FLAGS) -c $< -o $@
 
 # UT_OBJS
 $(BUILD_DIR)/$(SRC_DIR)/$(UTILS_DIR)/%.o: $(SRC_DIR)/$(UTILS_DIR)/%.c
-	@echo "ut_objs target"
-	@echo $@
-	@echo $<
-
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
 
 # TEST_OBJS
 $(BUILD_DIR)/$(TEST_DIR)/%.o: $(TEST_DIR)/%.c
-	@echo "test_objs target"
-	@echo $@
-	@echo $<
-
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -I./test -c $< -o $@
 
