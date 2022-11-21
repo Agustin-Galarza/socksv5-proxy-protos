@@ -1,7 +1,3 @@
-/**
- * TODO:
- * - Manejar envío de respuesta de error apropiada en la etapa de addr resolution
- */
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
@@ -21,9 +17,9 @@
 #include "server/admin_server.h"
 #include "utils/parser/auth_negociation.h"
 
- /*********************************
- |          Definitions          |
- *********************************/
+/*********************************
+|          Definitions          |
+*********************************/
 
 #define MAX_CLIENTS_AMOUNT 500
 
@@ -73,6 +69,7 @@ enum socks5_reply_status {
     CONNECTION_REFUSED,
     TTL_EXPIRED,
     COMMAND_NOT_SUPPORTED,
+    ADDRESS_TYPE_NOT_SUPPORTED
 };
 
 enum socks5_auth_reply_status {
@@ -686,7 +683,20 @@ socket_descriptor socks5_try_connect(struct client_data* data) {
 
     if (!connection_in_proggress(connection_status)) {
         log_error("Error connecting to %s: %s", origin_addr_buff, strerror(connection_status));
-        //TODO: handle error
+        struct address_request_struct* client = &data->client.addr_req;
+
+        switch (connection_status) {
+        case EAFNOSUPPORT:
+            *client->resolution_status = ADDRESS_TYPE_NOT_SUPPORTED;
+            break;
+        case ECONNREFUSED:
+            *client->resolution_status = CONNECTION_REFUSED;
+        case ENETUNREACH:
+            *client->resolution_status = NETWORK_UNREACHABLE;
+        default:
+            *client->resolution_status = SERVER_FAILURE;
+            break;
+        }
         return NO_SOCKET;
     }
     log_debug("Starting connection to %s", origin_addr_buff);
@@ -1017,9 +1027,10 @@ static unsigned read_address_req(struct selector_key* key) {
     switch (read_status) {
     case -1:
         log_error("Could not read request from client %s [Reason: %s]", client->to_str, strerror(errno));
-        return CONNECTION_ERROR;
+        *client->resolution_status = SERVER_FAILURE;
+        return ADDRESS_RES;
     case 0:
-        return CONNECTION_DONE;
+        // Si el cliente cierra la conexión de su lado, de todas formas parseo la respuesta y luego le mando el resultado
     default:
         bytes_read = (size_t)read_status;
         buffer_write_adv(client->write_buffer, bytes_read);
@@ -1028,7 +1039,8 @@ static unsigned read_address_req(struct selector_key* key) {
 
         if (request_parser_status == REQUEST_PARSER_FINISH_ERROR) {
             log_error("Could not parse request from client %s", client->to_str);
-            return CONNECTION_ERROR;
+            *client->resolution_status = SERVER_FAILURE;
+            return ADDRESS_RES;
         }
 
         if (request_parser_status == REQUEST_PARSER_FINISH_OK) {
@@ -1132,10 +1144,44 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
     }
 }
 
+static enum socks5_reply_status resolve_status(int gai_err, int errno_err) {
+    switch (gai_err) {
+    case EAI_NONAME:
+#ifdef __USE_GNU
+    case EAI_ADDRFAMILY:
+    case EAI_NODATA:
+#endif
+        return HOST_UNREACHABLE;
+    case EAI_FAMILY:
+        return ADDRESS_TYPE_NOT_SUPPORTED;
+    case EAI_SERVICE:
+    case EAI_SOCKTYPE:
+        return CONNECTION_REFUSED;
+    default:
+        switch (errno_err) {
+        case ENETUNREACH:
+        case ENETDOWN:
+            return NETWORK_UNREACHABLE;
+        case EHOSTUNREACH:
+        case EHOSTDOWN:
+            return HOST_UNREACHABLE;
+        case ENOTCONN:
+        case ESHUTDOWN:
+            return CONNECTION_REFUSED;
+        case EAFNOSUPPORT:
+            return ADDRESS_TYPE_NOT_SUPPORTED;
+        }
+    }
+    return SERVER_FAILURE;
+}
+
 static void* resolve_fqdn_address(void* data) {
+    errno = 0;
     struct address_request_struct* client = data;
-    if (client->dst_hint.address == NULL || client->dst_hint.port == NULL)
+    if (client->dst_hint.address == NULL || client->dst_hint.port == NULL) {
+        *client->resolution_status = SERVER_FAILURE;
         return NULL;
+    }
 
     struct addrinfo* addr_list;
 
@@ -1143,6 +1189,7 @@ static void* resolve_fqdn_address(void* data) {
     if ((error = getaddrinfo(client->dst_hint.address, client->dst_hint.port, client->dst_hint.addrinfo_hint, &addr_list))) {
         log_error("Could not resolve address %s:%s: %s", client->dst_hint.address, client->dst_hint.port, gai_strerror(error));
         client->resolved_addresses_list->start = NULL;
+        *client->resolution_status = resolve_status(error, errno);
         goto resolve_fqdn_address_end;
     }
 
@@ -1154,7 +1201,7 @@ resolve_fqdn_address_end:
     client->dst_hint.address = NULL;
     client->dst_hint.port = NULL;
     if (selector_notify_block(*client->selector, *client->fd) != SELECTOR_SUCCESS) {
-        // TODO: handle error
+        *client->resolution_status = SERVER_FAILURE;
         return NULL;
     }
     return client->resolved_addresses_list->start;
@@ -1172,9 +1219,6 @@ static void resolve_addr_close(const unsigned state, struct selector_key* key) {
 static unsigned finish_address_resolution(struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
-    if (client->resolved_addresses_list->start == NULL)
-        return CONNECTION_ERROR;
-
     struct connecting_struct* origin = &GET_DATA(key)->origin.connecting;
     origin->fd = &GET_DATA(key)->origin_fd;
     origin->resolved_addresses_list = &GET_DATA(key)->resolved_addresses_list;
@@ -1183,6 +1227,11 @@ static unsigned finish_address_resolution(struct selector_key* key) {
     origin->write_buffer = GET_DATA(key)->read_buffer;
     origin->read_buffer = GET_DATA(key)->write_buffer;
     origin->to_str = GET_DATA(key)->origin_str;
+
+    if (client->resolved_addresses_list->start == NULL) {
+        // Hubo un error y hay que informarlo al cliente
+        return ADDRESS_RES;
+    }
 
     return CONNECTING;
 }
@@ -1208,7 +1257,6 @@ static void start_connection(const unsigned state, struct selector_key* key) {
         data->resolved_addresses_list.current = NULL;
         freeaddrinfo(origin->resolved_addresses_list->start);
 
-        close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
 
@@ -1219,8 +1267,8 @@ static void start_connection(const unsigned state, struct selector_key* key) {
     // Add origin
     data->references++;
     if (selector_register(selector, origin_local_socket, &socks5_client_handlers, OP_WRITE, data) != SELECTOR_SUCCESS) {
-        //TODO: handle error
-        close_connection_normally(CONNECTION_ERROR, key);
+        struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
+        *client->resolution_status = SERVER_FAILURE;
         return;
     }
 }
@@ -1247,7 +1295,7 @@ static unsigned check_connection_with_origin(struct selector_key* key) {
             start_connection(CONNECTING, key);
             return CONNECTING;
         }
-        return CONNECTION_ERROR;
+        return ADDRESS_RES;
     }
 
     print_address_from_descriptor(*origin->fd, origin->to_str);
@@ -1255,7 +1303,7 @@ static unsigned check_connection_with_origin(struct selector_key* key) {
 
     selector_set_interest(key->s, GET_DATA(key)->client_fd, OP_READ);
     selector_set_interest(key->s, GET_DATA(key)->origin_fd, OP_NOOP);
-    *origin->resolution_status = SUCCEDED; //TODO: handle error statuses too
+    *origin->resolution_status = SUCCEDED;
     return ADDRESS_RES;
 }
 
@@ -1280,11 +1328,8 @@ static void address_res_init(const unsigned state, struct selector_key* key) {
 
     if (*origin->resolution_status != SUCCEDED) {
         log_error("There were errors during connection");
-        //Handle error
-        goto address_res_init_end; //TODO: close connection
     }
 
-address_res_init_end:
     selector_set_interest(key->s, GET_DATA(key)->client_fd, OP_WRITE);
 }
 
@@ -1317,9 +1362,11 @@ static unsigned write_address_res(struct selector_key* key) {
     size_t bytes_sent = (size_t)send_status;
     buffer_read_adv(client->read_buffer, bytes_sent);
 
-    if (bytes_sent == bytes_to_send)
+    if (bytes_sent == bytes_to_send) {
+        if (*client->resolution_status != SUCCEDED)
+            return CONNECTION_DONE;
         return ntohs(JOIN_PORT_ARRAY(client->parser->port)) == POP3_PORT ? SNIFF : COPY;
-
+    }
     return ADDRESS_RES;
 }
 
