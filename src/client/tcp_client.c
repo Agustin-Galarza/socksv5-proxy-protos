@@ -66,6 +66,7 @@ int main(int argc, char* argv[]) {
             goto finish;
         }
 
+        // TODO: check server response
         uint8_t buff[10];
         read(sock, buff, 10);
 
