@@ -11,18 +11,14 @@ int main(int argc, char* argv[]) {
     char* err_msg, * success_msg = "OK!\n";
     tcp_conf conf = {
         .addr = "127.0.0.1", // default address
-        .port = "8080", // default port
+        .port = 1080, // default port
         .version = 4, //default version
     };
-    struct sockaddr_in6 ipv6_address;
-    struct sockaddr_in ipv4_address;
-    char * addr = (char *)conf.addr;
-    int version = conf.version;
-    unsigned short port = (unsigned short) atoi(conf.port);
+    
     int tries=0;
-    uint16_t status = 0;
+    uint16_t status = FAILED_AUTH;
     uint8_t username[CREDS_LEN] = {0}, password[CREDS_LEN] = {0};
-    int sock;
+    
 
     buffer * cmd = malloc(sizeof(buffer*));
     cmd->data = malloc(sizeof(uint8_t)*BUFF_SIZE);
@@ -32,17 +28,26 @@ int main(int argc, char* argv[]) {
         exit_status = 1;
     }
 
-    if(version == 4)
-        sock = connect_to_ipv4(&ipv4_address, port, addr);
-    else if (version == 6 )
-        sock = connect_to_ipv6(&ipv6_address, port, addr);
+    int sock;
+    struct sockaddr_in6 ipv6_address;
+    struct sockaddr_in ipv4_address;
+    unsigned short port = conf.port;
+
+    if (conf.version == 6 ){
+        printf("Connecting to IPv6\n");
+        sock = connect_to_ipv6(&ipv6_address, port, conf.addr);
+    }
     else{
-        printf("You should enter the version as: 4 for ipv4 or 6 for ipv6.\n");
-        return -1;
+        printf("Connecting to IPv4\n");
+        sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
     }
     
-    if(sock < 0)
-        return -1;
+    if(sock < 0){
+        exit_status = -1;
+        goto finish;
+    }
+
+    printf("Successfully connected\n");
 
 
     /*
@@ -59,12 +64,14 @@ int main(int argc, char* argv[]) {
 
         if(tries++ >= MAX_AUTH_TRIES){
             printf("Max number of tries reached\n");
-            return close_connection(sock);
+            exit_status = close_connection(sock);
+            goto finish;
         }
 
         if(send_credentials(sock, username, password) < 0){
             close_connection(sock);
-            return -1;
+            exit_status = -1;
+            goto finish;
         }
 
         struct yap_parser * parser = yap_parser_init();
@@ -75,11 +82,14 @@ int main(int argc, char* argv[]) {
 
         free(parser);
 
+        status = SUCCESS_AUTH;
+
         putchar('\n');
     }
 
-    free(cmd->data);
-    free(cmd);
+finish:     free(cmd->data);
+            free(cmd);
 
-    return 0;
+
+    return exit_status;
 }

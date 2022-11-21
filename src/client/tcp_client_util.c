@@ -38,7 +38,7 @@ int connect_to_ipv4(struct sockaddr_in * ipv4_address, unsigned short port , cha
     inet_pton(AF_INET, address, &ipv4_address->sin_addr.s_addr);
 
     if(connect(sock_fd, (struct sockaddr *) ipv4_address, sizeof(*ipv4_address)) < 0){
-        printf("Unable to connect\n");
+        printf("Unable to connect IPv4\n");
         close(sock_fd);
         return -1;
     }
@@ -58,7 +58,7 @@ int connect_to_ipv6(struct sockaddr_in6 * ipv6_address, unsigned short port,char
     ipv6_address->sin6_port= htons(port);
 
     if(connect(sock_fd, (struct sockaddr *) ipv6_address, sizeof(*ipv6_address)) < 0){
-        printf("Unable to connect\n");
+        printf("Unable to connect IPv6\n");
         close(sock_fd);
         return -1;
     }

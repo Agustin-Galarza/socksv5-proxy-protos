@@ -21,7 +21,8 @@
 #define USER_LIST 7
 #define QUERIES_TOTAL 4
 #define MODIFIERS_TOTAL 2
-#define SUCCESS_AUTH 0x0000
+#define SUCCESS_AUTH 0
+#define FAILED_AUTH 1
 #define COMMAND_MAX_LEN 64
 #define BUILTIN_TOTAL 2
 
