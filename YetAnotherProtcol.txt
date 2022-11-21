@@ -3,7 +3,7 @@ Yet Another Protocol (YAP) V1.0
 1. Introduction
 
 The goal of this RFC is to describe how to interact and monitor the SOCKS5v5[RFC1928] proxy. YAP is a TCP-based binary protocol.
-YAP was developed for the subject "Protocolos de Comunicación - 2Q2022" by Group 4:
+YAP was developed for the subject "Protocolos de Comunicación - 2022" by Group 4:
 	- Agustín Benvenuto (61448)
 	- Agustín Ezequiel Galarza (61481)
 	- Agustina Sol Ortu (61548)
@@ -76,7 +76,10 @@ Data types supported:
 				- '0x01': Invalid user
 				- '0x02' - 0xFF: Not used
 
-3. General
+3. General - Commands
+
+	After a successful authentication, the client then proceeds to send command requests. The general form of these commands is a comand number (CMD), optionally followed by one or more arguments.
+	In case of an error the server returns two bytes full with ones, that is '0xFF''0XFF'.
 	
 	3.1 Users
 
@@ -114,7 +117,7 @@ Data types supported:
 			Where METRIC:
 				- '0x00': Historic connections
 				- '0x01': Concurrent connections
-				- '0x02': Total number of bytes sent
+				- '0x02': Total number of KB sent
 				- '0x03': Not used
 
 		3.2.2 Response
