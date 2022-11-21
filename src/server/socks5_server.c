@@ -21,8 +21,6 @@
 |          Definitions          |
 *********************************/
 
-#define MAX_CLIENTS_AMOUNT 500
-
 #define SOCKS_VER_BYTE 0x5
 #define SOCKS_AUTH_VER_BYTE 0x01
 

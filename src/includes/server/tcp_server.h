@@ -17,12 +17,15 @@ enum ip_version
 struct server_config
 {
     size_t max_clients;
+
+    char* socks5_addr;
     uint16_t port;
+
+    char* admin_addr;
     uint16_t admin_port;
-    enum ip_version version;
+
     int initial_connections;
-    const char* logs_filename;
-    struct users users[SERVER_MAX_USERS]; // todo: make list
+    struct users users[SERVER_MAX_USERS];
 };
 
 // returns TRUE on error, FALSE, otherwhise

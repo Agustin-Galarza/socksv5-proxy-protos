@@ -4,6 +4,8 @@
 #include "utils/netutils.h"
 #include "utils/selector.h"
 
+#define MAX_CLIENTS_AMOUNT 500
+
 bool socks5_init_server();
 void socks5_close_server();
 

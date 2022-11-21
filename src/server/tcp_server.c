@@ -204,6 +204,11 @@ end:
     return error;
 }
 
+//TODO: remove
+static void print_user(struct user_list_user* usr) {
+    log_debug("- %s:%s", usr->username, usr->password);
+}
+
 struct server_sockets
     server_init(struct server_config* config) {
     struct server_sockets sockets;
@@ -215,11 +220,13 @@ struct server_sockets
         return sockets;
     }
 
-    // TODO: remove
-    user_list_t* users = user_list_init(10);
-    user_list_add(users, "User1", "Pass1");
-    user_list_add(users, "User2", "Pass2");
-    /////////////////////////
+    user_list_t* users = user_list_init(MAX_CLIENTS_AMOUNT);
+    for (int i = 0;config->users[i].name != NULL;i++) {
+        user_list_add(users, config->users[i].name, config->users[i].pass);
+    }
+    log_debug("Initial Users:");
+    user_list_for_each(users, print_user);
+
     if (admin_server_init(users)) {
         log_error("Could not initialize admin server");
         return sockets;

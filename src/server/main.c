@@ -6,10 +6,17 @@
 #include "server/tcp_server.h"
 #include "utils/parser/args.h"
 
-#ifdef DEFAULT_FILE_NAME
-#undef DEFAULT_FILE_NAME
-#define DEFAULT_FILE_NAME "logs/logger.log"
-#endif
+/**
+ * host socks5
+ * p    socks5
+ *
+ * host admin
+ * p    admin
+ *
+ * lista de usuarios iniciales
+ *
+ *
+ */
 
 int main(int argc, char** argv) {
     struct logger_init_args logger_args = {
@@ -30,10 +37,10 @@ int main(int argc, char** argv) {
     struct server_config config_args;
     config_args.initial_connections = 3;
     config_args.max_clients = 500;
+
     config_args.port = socks5_args.socks_port;
-    config_args.admin_port = socks5_args.mng_port;
-    config_args.version = IPV4;
-    config_args.logs_filename = "logs/server_logs.log";
+    config_args.admin_port = socks5_args.admin_port;
+
     memcpy(config_args.users, socks5_args.users, MAX_USERS * sizeof(struct users));
 
     if (run_server(&config_args)) {
