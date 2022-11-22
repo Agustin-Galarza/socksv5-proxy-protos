@@ -42,7 +42,8 @@ static void
 version(void) {
     fprintf(stderr, "socks5d version 1.0\n"
                     "ITBA Protocolos de Comunicación 2022/2 -- Grupo 4\n"
-                    "LICENCIA PENDIENTE\n");
+                    "MIT License\n"
+    "Copyright (c) 2022 Protocolos de Comunicación - 2022:Group 4\n");
 }
 
 static void
