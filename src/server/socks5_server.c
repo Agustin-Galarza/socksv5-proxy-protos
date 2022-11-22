@@ -559,12 +559,13 @@ bool socks5_unregister_client(struct client_data* data) {
         error = true;
         goto close_connection_end;
     }
-    if ((status = selector_unregister_fd(selector, origin_descriptor)) != SELECTOR_SUCCESS) {
-        log_error("Could not close connection with origin endpoint from %s: %s", client_str_copy, selector_error(status));
+    if (origin_descriptor > 0)
+        if ((status = selector_unregister_fd(selector, origin_descriptor)) != SELECTOR_SUCCESS) {
+            log_error("Could not close connection with origin endpoint from %s: %s", client_str_copy, selector_error(status));
 
-        error = true;
-        goto close_connection_end;
-    }
+            error = true;
+            goto close_connection_end;
+        }
 
 close_connection_end:
     free(client_str_copy);
@@ -793,11 +794,15 @@ read_hello(struct selector_key* key) {
     uint8_t* buffer_raw = buffer_write_ptr(client->write_buffer, &max_write);
     int bytes_read = read(key->fd, buffer_raw, max_write);
 
-    if (bytes_read == 0)
+    if (bytes_read == 0) {
+        negotiation_parser_free(client->parser);
+        client->parser = NULL;
         return CONNECTION_DONE;
-
+    }
     if (bytes_read == -1) {
         log_error("Error while reading hello from client");
+        negotiation_parser_free(client->parser);
+        client->parser = NULL;
         return CONNECTION_ERROR;
     }
     buffer_write_adv(client->write_buffer, bytes_read);
@@ -811,6 +816,8 @@ read_hello(struct selector_key* key) {
     switch (negociation_parser_result) {
     case NEGOTIATION_PARSER_FINISH_ERROR:
         log_error("Could not negociate with client %s", client->to_str);
+        negotiation_parser_free(client->parser);
+        client->parser = NULL;
         return CONNECTION_ERROR;
 
     case NEGOTIATION_PARSER_FINISH_OK:
