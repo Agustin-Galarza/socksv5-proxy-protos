@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     struct pop3_parser * pop3_parser = pop3_parser_init();
     struct auth_negociation_parser * auth_parser = auth_negociation_parser_init();
 
-    int sock;
+    int sock_fd;
     struct sockaddr_in6 ipv6_address;
     struct sockaddr_in ipv4_address;
     unsigned short port = conf.port;
@@ -47,14 +47,14 @@ int main(int argc, char* argv[]) {
 
         if (conf.version == 6) {
             printf("Connecting to IPv6\n");
-            sock = connect_to_ipv6(&ipv6_address, port, conf.addr);
+            sock_fd = connect_to_ipv6(&ipv6_address, port, conf.addr);
         }
         else {
             printf("Connecting to IPv4\n");
-            sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
+            sock_fd = connect_to_ipv4(&ipv4_address, port, conf.addr);
         }
 
-        if (sock < 0) {
+        if (sock_fd < 0) {
             exit_status = -1;
             goto finish;
         }
@@ -69,12 +69,12 @@ int main(int argc, char* argv[]) {
             if (tries++ >= MAX_AUTH_TRIES) {
                 printf("Max number of tries reached\n");
                 exit_status = -1;
-                close_connection(sock);
+                close_connection(sock_fd);
                 goto finish;
             }
 
-            if (send_credentials(sock, username, password) < 0) {
-                close_connection(sock);
+            if (send_credentials(sock_fd, username, password) < 0) {
+                close_connection(sock_fd);
                 exit_status = -1;
                 goto finish;
             }
@@ -83,10 +83,10 @@ int main(int argc, char* argv[]) {
             uint8_t buff[server_response_size];
 
             errno = 0;
-            int bytes_read = read(sock, buff, server_response_size);
+            int bytes_read = read(sock_fd, buff, server_response_size);
             if (bytes_read == -1) {
                 fprintf(stderr, "Could not read response from server: %s", strerror(errno));
-                close_connection(sock);
+                close_connection(sock_fd);
                 exit_status = -1;
                 goto finish;
             }
@@ -104,8 +104,8 @@ int main(int argc, char* argv[]) {
 
         while (status == CONNECTED) {
 
-            if (ask_command_yap(sock, parser) < 0) {
-                close_connection(sock);
+            if (ask_command_yap(sock_fd, parser) < 0) {
+                close_connection(sock_fd);
                 exit_status = -1;
                 goto finish;
             }
@@ -119,9 +119,9 @@ int main(int argc, char* argv[]) {
             goto finish;
         }
 
-        sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
+        sock_fd = connect_to_ipv4(&ipv4_address, port, conf.addr);
 
-        if (sock < 0) {
+        if (sock_fd < 0) {
             exit_status = -1;
             goto finish;
         }
@@ -130,15 +130,15 @@ int main(int argc, char* argv[]) {
 
         char * buff = malloc(BUFF_SIZE);
 
-        if (send(sock, &to_send, 3, 0) <= 0)
+        if (send(sock_fd, &to_send, 3, 0) <= 0)
             return -1;
 
-        size_t bytes = read(sock, buff, BUFF_SIZE);
+        size_t bytes = read(sock_fd, buff, BUFF_SIZE);
 
         free(buff);
 
-        if (send_socks_credentials(sock, auth_parser) < 0) {
-                close_connection(sock);
+        if (send_socks_credentials(sock_fd, auth_parser) < 0) {
+                close_connection(sock_fd);
                 exit_status = -1;
                 goto finish;
         }
@@ -149,8 +149,8 @@ int main(int argc, char* argv[]) {
         print_socks_welcome_msg();
 
         while (status == CONNECTED) {
-            if (ask_command_socks(sock, n_parser) < 0) {
-                close_connection(sock);
+            if (ask_command_socks(sock_fd, n_parser) < 0) {
+                close_connection(sock_fd);
                 exit_status = -1;
                 goto finish;
             }

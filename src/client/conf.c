@@ -166,12 +166,11 @@ bool n_parse_conf(const int argc, char** argv, struct negotiation_parser * args,
 void socks_user (char * s, struct auth_negociation_parser * parser){
     int i;
     int pass_start = 0;
-    char * username = s, * password;
+    char * username = s;
     int len = strlen(s);
     for (i = 0; i < len; i++) {
         if (s[i] == ':'){
             s[i] = 0;
-            password = s+i+1;
             pass_start = i+1;
             break;
         }
