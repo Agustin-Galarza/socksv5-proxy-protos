@@ -187,7 +187,6 @@ int main(int argc, char* argv[]) {
         while (status == CONNECTED) {
             if (ask_command_socks(sock_fd, n_parser) < 0) {
                 close_connection(sock_fd);
-                free(n_parser->dest_addr);
                 exit_status = -1;
                 goto finish;
             }

@@ -918,7 +918,7 @@ int print_curl(int sock_fd, struct n_conf* parser) {
     else
         buffer[end - (char*)buffer] = 0;
 
-    parser->dest_addr = malloc(strlen(buffer) + 10);
+    memset(parser->dest_addr, 0, BUFF_SIZE);
     strcpy(parser->dest_addr, buffer);
 
     free(buffer);
