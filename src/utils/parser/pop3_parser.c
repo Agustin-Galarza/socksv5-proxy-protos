@@ -23,6 +23,7 @@ void pop3_parser_reset(struct pop3_parser* parser) {
 
 
 void pop3_parser_free(struct pop3_parser* parser) {
+    if (parser == NULL) return;
     if (parser->user != NULL) {
         free(parser->user);
     }

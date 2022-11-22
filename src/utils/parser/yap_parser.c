@@ -12,7 +12,8 @@ struct yap_parser* yap_parser_init() {
 
 // Free del parser
 void yap_parser_free(struct yap_parser* parser) {
-    free(parser);
+    if (parser != NULL)
+        free(parser);
 }
 
 // Parsea un buffer
@@ -66,7 +67,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         else if (parser->username_current < parser->username_length) {
             parser->username[parser->username_current++] = byte;
         }
-        else if (parser->username_current == parser->username_length) {
+        if (parser->username_current == parser->username_length) {
             parser->state = YAP_STATE_ADD_PASS;
             log_debug("Username completa: %s", parser->username);
             return YAP_PARSER_NOT_FINISHED;
@@ -79,9 +80,8 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         }
         else if (parser->password_current < parser->password_length) {
             parser->password[parser->password_current++] = byte;
-            return YAP_PARSER_NOT_FINISHED;
         }
-        else if (parser->password_current == parser->password_length) {
+        if (parser->password_current == parser->password_length) {
             log_debug("Password completa: %s", parser->password);
             return YAP_PARSER_FINISH;
         }
@@ -93,7 +93,8 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         else if (parser->username_current < parser->username_length) {
             parser->username[parser->username_current++] = byte;
         }
-        else if (parser->username_current == parser->username_length) {
+        if (parser->username_current == parser->username_length) {
+            parser->state = YAP_STATE_REMOVE_PASS;
             log_debug("Username completa: %s", parser->username);
             return YAP_PARSER_NOT_FINISHED;
         }
@@ -105,9 +106,8 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         }
         else if (parser->password_current < parser->password_length) {
             parser->password[parser->password_current++] = byte;
-            return YAP_PARSER_NOT_FINISHED;
         }
-        else if (parser->password_current == parser->password_length) {
+        if (parser->password_current == parser->password_length) {
             log_debug("Password completa: %s", parser->password);
             return YAP_PARSER_FINISH;
         }
@@ -141,6 +141,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         return YAP_PARSER_ERROR;
         break;
     }
+    return YAP_PARSER_NOT_FINISHED;
 }
 
 // COnsume un buffer

@@ -17,7 +17,8 @@ struct negotiation_parser* negotiation_parser_init() {
 }
 
 void negotiation_parser_free(struct negotiation_parser* parser) {
-    free(parser);
+    if (parser != NULL)
+        free(parser);
 }
 
 enum negotiation_state negotiation_paser_feed(struct negotiation_parser* parser, uint8_t byte) {

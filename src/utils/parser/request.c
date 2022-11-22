@@ -10,7 +10,8 @@ struct request_parser* request_parser_init() {
 }
 
 void request_parser_free(struct request_parser* parser) {
-    free(parser);
+    if (parser != NULL)
+        free(parser);
 }
 
 int request_parser_has_error(struct request_parser* parser) {
