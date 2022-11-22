@@ -268,8 +268,6 @@ int ask_command_socks(int sock_fd, struct n_conf* parser) {
     if (send_string(sock_fd, len, (uint8_t*)parser->dest_addr) < 0)
         return -1;
 
-    free(parser->dest_addr);
-
     char* buffer = malloc(BUFF_SIZE);
     buffer[0] = 0;
     size_t bytes;
@@ -847,10 +845,6 @@ int send_socks_credentials(int sock_fd, struct auth_negociation_parser* parser) 
 
     if (send_string(sock_fd, parser->password_length, parser->password) < 0)
         return -1;
-
-    char* buffer = malloc(BUFF_SIZE);
-    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
-    free(buffer);
 
     return 0;
 }

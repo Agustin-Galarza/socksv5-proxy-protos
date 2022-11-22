@@ -92,7 +92,12 @@ int main(int argc, char* argv[]) {
             }
 
             status = buff[1];
-            printf("Invalid credentials. Please try again\n");
+            if (status == FAILED_AUTH){
+                printf("Invalid credentials.\n");
+                close_connection(sock_fd);
+                exit_status = -1;
+                goto finish;
+            }
 
             putchar('\n');
         }
@@ -128,20 +133,51 @@ int main(int argc, char* argv[]) {
 
         uint8_t to_send[] = { 5, 1, 2 };
 
-        char* buff = malloc(BUFF_SIZE);
+        char* aux_buff = malloc(BUFF_SIZE);
 
         if (send(sock_fd, &to_send, 3, 0) <= 0)
             return -1;
 
-        size_t bytes = read(sock_fd, buff, BUFF_SIZE);
+        size_t bytes = read(sock_fd, aux_buff, BUFF_SIZE);
 
-        free(buff);
 
-        if (send_socks_credentials(sock_fd, auth_parser) < 0) {
-            close_connection(sock_fd);
-            exit_status = -1;
-            goto finish;
+        free(aux_buff);
+
+        status = FAILED_AUTH;
+
+        while (status != SUCCESS_AUTH){
+
+            if (send_socks_credentials(sock_fd, auth_parser) < 0) {
+                close_connection(sock_fd);
+                exit_status = -1;
+                goto finish;
+            }
+
+            const size_t server_response_size = 2;
+            uint8_t buff[server_response_size];
+
+            errno = 0;
+            int bytes_read = read(sock_fd, buff, server_response_size);
+
+            if (bytes_read == -1) {
+                fprintf(stderr, "Could not read response from server: %s", strerror(errno));
+                close_connection(sock_fd);
+                exit_status = -1;
+                goto finish;
+            }
+
+            status = buff[1];
+            if (status != SUCCESS_AUTH){
+                printf("Invalid credentials.\n");
+                close_connection(sock_fd);
+                exit_status = -1;
+                goto finish;
+            }
+
+            putchar('\n');
         }
+
+        printf("Exit while\n");
 
 
         status = CONNECTED;
@@ -151,6 +187,7 @@ int main(int argc, char* argv[]) {
         while (status == CONNECTED) {
             if (ask_command_socks(sock_fd, n_parser) < 0) {
                 close_connection(sock_fd);
+                free(n_parser->dest_addr);
                 exit_status = -1;
                 goto finish;
             }
@@ -162,6 +199,5 @@ finish:
     free(n_parser);
     pop3_parser_free(pop3_parser);
     auth_negociation_parser_free(auth_parser);
-
     return exit_status;
 }
