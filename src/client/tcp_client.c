@@ -159,6 +159,7 @@ int main(int argc, char* argv[]) {
 
 finish:
     yap_parser_free(parser);
+    free(n_parser->dest_addr);
     free(n_parser);
     pop3_parser_free(pop3_parser);
     auth_negociation_parser_free(auth_parser);

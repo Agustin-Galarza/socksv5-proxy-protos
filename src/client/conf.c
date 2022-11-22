@@ -43,29 +43,28 @@ static CMD cmd(const char* s) {
     return cmd;
 }
 static void
-usage(const char* progname) {
-    fprintf(stderr,
-            "Usage: %s [OPTION]...\n"
+usage() {
+    printf( "Usage: [OPTION]...\n"
             "\n"
             "   -h               Help.\n"
-            "   -L               Specify address to connect. REQUIRED\n"
-            "   -P               Specify port to connect.\n"
+            "   -L <address>     Specify address to connect. REQUIRED\n"
+            "   -P <port>        Specify port to connect.\n"
             "   [-4 | -6]        Specify ip version use.\n"
-            "\n",
-            progname);
+            "\n"
+        );
     exit(1);
 }
 
 static void
-n_usage(const char* progname) {
-    fprintf(stderr,
-            "Usage: %s [OPTION]...\n"
+n_usage() {
+    printf("Usage: [OPTION]...\n"
             "\n"
-            "   -h                  Help.\n",
-            "   -u <name>:<pass>    Username and password that the proxy can use\n",
-            "   -a <type>           Address type. <4> for IPv4; <DN> for domain name; <6> for IPv6\n",
-            "\n",
-            progname);
+            "   -h                  Help.\n"
+            "   -u <name>:<pass>    Username and password that the proxy can use\n"
+            "   -P <port>           Specify port to connect. REQUIRED\n"
+            "   -a <type>           Address type. <4> for IPv4; <DN> for domain name; <6> for IPv6\n"
+            "\n"
+        );
     exit(1);
 }
 
@@ -89,7 +88,7 @@ bool parse_conf(const int argc, char** argv, struct tcp_conf* args) {
         case 'Y':
             break;
         case 'h':
-            usage(argv[0]);
+            usage();
             break;
         case 'L':
             args->addr = optarg;
@@ -138,7 +137,7 @@ bool n_parse_conf(const int argc, char** argv, struct negotiation_parser* args, 
         case 'S':
             break;
         case 'h':
-            n_usage(argv[0]);
+            n_usage();
             break;
         case 'u':
             args->nmethods = 1;
