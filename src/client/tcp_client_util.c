@@ -846,10 +846,6 @@ int send_socks_credentials(int sock_fd, struct auth_negociation_parser* parser) 
     if (send_string(sock_fd, parser->password_length, parser->password) < 0)
         return -1;
 
-    char* buffer = malloc(BUFF_SIZE);
-    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
-    free(buffer);
-
     return 0;
 }
 
