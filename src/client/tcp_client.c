@@ -97,9 +97,37 @@ int main(int argc, char* argv[]) {
         }
     }
 
+
+    // SOCKS Request _ AGUS
+
+    struct yap_negociation_parser* n_parser = yap_negociation_parser_init();
+    char* buffer = malloc(BUFF_SIZE);
+    uint16_t n_status = AUTH_FAIL;
+    n_conf n_config = {
+        .port = 1080, // default port
+        .version = 5, //default version
+    };
+
+    if (!n_parse_conf(argc, argv, &n_config)) {
+        err_msg = "Error parsing configuration from arguments";
+        exit_status = 1;
+    }
+    // uint8_t buffer[BUFF_SIZE];
+
+    // while(n_status != AUTH_SUCCESS){  
+    //     int bytes_read = read(sock, buffer, BUFF_SIZE);
+    //     if (bytes_read == -1) {
+    //         fprintf(stderr, "Could not read response from server: %s", strerror(errno));
+    //         close_connection(sock);
+    //         goto finish;
+    //     }
+
+    //     n_status = buff[1];
+    // }
+
 finish:
     yap_parser_free(parser);
-
+    negotiation_parser_free(n_parser);
 
     return exit_status;
 }

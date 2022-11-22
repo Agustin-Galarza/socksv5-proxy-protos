@@ -51,7 +51,7 @@ Data types supported:
 2. Authentication
 	
 	2.1 Request
-		+--------+--------+--------+
+				+--------+--------+--------+
             	|  VER   | UNAME  | PASSWD |
             	+--------+--------+--------+
             	| '0x01' | string | string | 
@@ -63,7 +63,7 @@ Data types supported:
 			- PASSWD: password 
 
 	2.2 Response
-		+--------+--------+
+				+--------+--------+
             	|  VER   | STATUS | 
             	+--------+--------+
             	| '0x01' | u_int8 | 

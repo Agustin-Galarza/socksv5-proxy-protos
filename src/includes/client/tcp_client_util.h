@@ -31,12 +31,6 @@
 #define CONFIG_TOTAL 2
 
 
-// #define LIST_USERS 1
-// #define METRIC 2
-// #define ADD_USER 3
-// #define REMOVE_USER 4
-// #define CONFIG 5
-
 #define HISTORICAL_CONNECTIONS 0
 #define CONCURRENT_CONNECTIONS 1
 #define BYTES_SENT 2
