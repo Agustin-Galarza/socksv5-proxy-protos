@@ -654,19 +654,36 @@ bool socks5_add_new_client(socket_descriptor client, fd_selector selector) {
 }
 
 socket_descriptor socks5_try_connect(struct client_data* data) {
+    errno = 0;
     struct connecting_struct* origin = &data->origin.connecting;
     if (origin->resolved_addresses_list->current == NULL) return NO_SOCKET;
 
     struct addrinfo* origin_addr = origin->resolved_addresses_list->current;
+
+    char origin_addr_buff[ADDR_STR_MAX_SIZE];
+    print_address_info(origin_addr, origin_addr_buff);
+
     // crear el socket
     socket_descriptor new_client_socket = socket(origin_addr->ai_family, origin_addr->ai_socktype, origin_addr->ai_protocol);
     if (new_client_socket == NO_SOCKET) {
-        free_addrinfo_on_error(origin_addr, "Could not create socket on ");
+        log_error("Could not create socket on %s: %s", origin_addr_buff, strerror(errno));
+        if (origin_addr->ai_family == AF_UNSPEC) {
+            freeaddrinfo(origin_addr);
+        }
+        else {
+            free_local_addrinfo(origin_addr);
+        }
         return NO_SOCKET;
     }
     // configurar el socket como no bloqueante
     if (selector_fd_set_nio(new_client_socket)) {
-        free_addrinfo_on_error(origin_addr, "Could not create non blocking socket on");
+        log_error("Could not create non blocking socket on %s: %s", origin_addr_buff, strerror(errno));
+        if (origin_addr->ai_family == AF_UNSPEC) {
+            freeaddrinfo(origin_addr);
+        }
+        else {
+            free_local_addrinfo(origin_addr);
+        }
         return NO_SOCKET;
     };
 
@@ -674,13 +691,18 @@ socket_descriptor socks5_try_connect(struct client_data* data) {
     int connection_status;
     if ((connect(new_client_socket, origin_addr->ai_addr, origin_addr->ai_addrlen) == -1) && !connection_in_proggress(errno)) {
         log_error("Error code: %d", errno);
-        free_addrinfo_on_error(origin_addr, "Could not connect to origin");
+        log_error("Could not connect to origin %s: %s", origin_addr_buff, strerror(errno));
+        if (origin_addr->ai_family == AF_UNSPEC) {
+            freeaddrinfo(origin_addr);
+        }
+        else {
+            free_local_addrinfo(origin_addr);
+        }
         return NO_SOCKET;
     }
     connection_status = errno;
 
-    char origin_addr_buff[ADDR_STR_MAX_SIZE];
-    print_address_info(origin_addr, origin_addr_buff);
+
 
     if (!connection_in_proggress(connection_status)) {
         log_error("Error connecting to %s: %s", origin_addr_buff, strerror(connection_status));
