@@ -203,7 +203,7 @@ int ask_command(int socket, struct yap_parser* parser) {
 int print_response(struct yap_parser* parser, int socket) {
     switch (parser->state) {
     case YAP_STATE_USER:
-        return print_user_list(socket);
+        return print_user_list(socket, parser);
 
     case YAP_STATE_METRIC:
         return print_metric(socket, parser);
@@ -215,7 +215,7 @@ int print_response(struct yap_parser* parser, int socket) {
         return print_user_command(socket, parser);
 
     case YAP_STATE_CONFIG:
-        return print_config(socket);
+        return print_config(socket, parser);
     }
 
     return -1;
@@ -333,26 +333,32 @@ int print_bytes_sent(char* buffer) {
     return printf("Bytes sent: %.*s\n", 2, buffer);
 }
 
-int print_user_list(int socket) {
+int print_user_list(int socket, struct yap_parser * parser) {
 
-    printf("Entered user list\n");
+    printf("User list:\n");
 
-    struct yap_parser* parser = yap_parser_init();
+    if (send_command(socket, parser) < 0) {
+        return -1;
+    }
 
     char* buffer = malloc(BUFF_SIZE);
-
     size_t bytes = read(socket, buffer, BUFF_SIZE);
 
-    if (bytes == 0)
+    if (bytes == 0) {
+        free(buffer);
         return -1;
+    }
 
-
+    char* buffer_ref = buffer;
     buffer++;
-    char* totalSize = &buffer[0];
+
+    int ret = -1;
+
+    char* totalSize = buffer;
     int bytesAmount = atoi(totalSize);
     buffer++;
     for (int i = 0; i < bytesAmount;) {
-        char* size = &buffer[0];
+        char * size = buffer;
         int userSize = atoi(size);
         buffer++;
 
@@ -365,32 +371,113 @@ int print_user_list(int socket) {
     return 0;
 }
 
-int print_config(int socket) {
+int print_config(int socket, struct yap_parser * parser) {
     handle_config();
+
+    uint8_t * config = malloc(BUFF_SIZE);
+    uint8_t * config_value = malloc(BUFF_SIZE);
+
+    ask_config(config, config_value);
+
+    uint16_t config_value_int = atoi((char*)config_value);
+
+    if (!strcmp((char*)config, "tout"))
+        parser->config = YAP_CONFIG_TIMEOUTS;
+    else if (!strcmp((char*)config, "bsize"))
+        parser->config = YAP_CONFIG_BUFFER_SIZE;
+    else{
+        printf("Unknown config command\n");
+        free(config);
+        free(config_value);
+        return 0;
+    }
+
+    parser->config_value = config_value_int;
+
+
+    free(config);
+    free(config_value);
+
+    if (send_command(socket, parser) < 0) {
+        printf("Failed in send\n");
+        return -1;
+    }
+
     char* buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
-    if (bytes == 0)
+
+    if (bytes == 0) {
+        free(buffer);
         return -1;
+    }
+
+    char* buffer_ref = buffer;
     buffer++;
 
-    switch (htons(buffer[0])) {
-    case YAP_CONFIG_TIMEOUTS:
-        switch (buffer[1]) {
-        case 0:
-            return ntohs(printf("Timeout was updated succesfully\n"));
-        case 1:
-            return ntohs(printf("Could not update timeout\n"));
-        }
+    int ret = -1;
+    switch (*buffer) {          
+        case YAP_CONFIG_TIMEOUTS:
+            switch (buffer[1]) {
+            case 0:
+                printf("Timeout was updated succesfully\n");
+                ret = 0;
+            case 1:
+                printf("Could not update timeout\n");
+                ret = -1;
+            }
 
-    case YAP_CONFIG_BUFFER_SIZE:
-        switch (buffer[1]) {
-        case 0:
-            return ntohs(printf("Buffer size was updated succesfully\n"));
-        case 1:
-            return ntohs(printf("Could not update buffer size\n"));
+        case YAP_CONFIG_BUFFER_SIZE:
+            switch (buffer[1]) {
+            case 0:
+                printf("Buffer size was updated succesfully\n");
+                ret = 0;
+            case 1:
+                printf("Could not update buffer size\n");
+                ret = -1;
+            }
+    }
+    free(buffer_ref);
+    return ret;
+}
+
+int ask_config(uint8_t * config, uint8_t * config_value) {
+    fflush(stdout);
+    uint8_t * buffer = malloc(BUFF_SIZE);
+    if (!fgets((char*)buffer, BUFF_SIZE, stdin))
+        return -1;
+
+    if (*buffer == '\n')
+        return -1;
+
+    int found_cmd = 0;
+    int i;
+    int arg2_start = 0;
+    int arg2_end = 0;
+    uint8_t * arg1 = buffer, * arg2;
+    int len = strlen((char*)buffer);
+    for (i = 0; i < len; i++) {
+        if (buffer[i] == ' '){
+            buffer[i] = 0;
+            arg2 = buffer+i+1;
+            arg2_start = i+1;
+            found_cmd++;
+        }
+        if (buffer[i] == '\n'){
+            buffer[i] = 0;
+            arg2_end = i;
+            found_cmd++;
         }
     }
-    return -1;
+
+    strcpy((char*)config, (char*)arg1);
+
+    strncpy((char*) config_value, (char*) arg1+arg2_start, arg2_end-arg2_start+1);
+
+    if (found_cmd != 2)
+        printf("\nPlease send your command as <command> <value>\n\n"); 
+
+    free(buffer);
+    return *config;
 }
 
 
@@ -433,30 +520,34 @@ int send_command(int sock_fd, struct yap_parser* parser) {
     if (send(sock_fd, &parser->command, 1, 0) < 0)
         return -1;
 
+
     int res = -1;
     switch (parser->command) {
-    case YAP_COMMANDS_METRICS:
-        res = send(sock_fd, &parser->metric, 1, 0);
-        // res = send(sock_fd, &parser->metric, 1, 0);
-        break;
-    case YAP_COMMANDS_ADD_USER:
-        res = send(sock_fd, &parser->username, parser->username_length, 0);
-        if (res < 0)
+        case YAP_COMMANDS_USERS:
+            res = 0;
             break;
-        res = send(sock_fd, &parser->password, parser->password_length, 0);
-        break;
-    case YAP_COMMANDS_REMOVE_USER:
-        res = send(sock_fd, &parser->username, parser->username_length, 0);
-        if (res < 0)
+        case YAP_COMMANDS_METRICS:
+            res = send(sock_fd, &parser->metric, 1, 0);
+            // res = send(sock_fd, &parser->metric, 1, 0);
             break;
-        res = send(sock_fd, &parser->password, parser->password_length, 0);
-        break;
-    case YAP_COMMANDS_CONFIG:
-        res = send(sock_fd, &parser->config, 1, 0);
-        if (res < 0)
+        case YAP_COMMANDS_ADD_USER:
+            res = send(sock_fd, &parser->username, parser->username_length, 0);
+            if (res < 0)
+                break;
+            res = send(sock_fd, &parser->password, parser->password_length, 0);
             break;
-        uint16_t toSend = htons(parser->config_value);
-        res = send(sock_fd, &toSend, 2, 0);
+        case YAP_COMMANDS_REMOVE_USER:
+            res = send(sock_fd, &parser->username, parser->username_length, 0);
+            if (res < 0)
+                break;
+            res = send(sock_fd, &parser->password, parser->password_length, 0);
+            break;
+        case YAP_COMMANDS_CONFIG:
+            res = send(sock_fd, &parser->config, 1, 0);
+            if (res < 0)
+                break;
+            uint16_t toSend = htons(parser->config_value);
+            res = send(sock_fd, &toSend, 2, 0);
     }
 
     if (res < 0)
@@ -529,7 +620,7 @@ void handle_metrics() {
     for (int i = 0; i < METRICS_TOTAL; i++)
         printf("%s\n", available_metrics[i]);
     printf("\nSend your command as <command>\n\n");
-    printf("$> ");
+    printf("(metric) ");
 }
 
 void handle_config() {
@@ -537,7 +628,7 @@ void handle_config() {
     for (int i = 0; i < CONFIG_TOTAL; i++)
         printf("%s\n", available_config[i]);
     printf("\nSend your command as <command> <value>\n\n");
-    printf("$> ");
+    printf("(config) ");
 }
 
 void handle_quit(int sock_fd) {

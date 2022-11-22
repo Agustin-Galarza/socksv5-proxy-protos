@@ -519,13 +519,13 @@ static unsigned read_cmd_request(struct selector_key* key) {
         buffer_write_adv(admin->write_buffer, read_status);
         enum yap_result result = yap_parser_consume(admin->write_buffer, admin->cmd_parser);
         switch (result) {
-        case YAP_PARSER_ERROR:
-            log_error("Could not parse command");
-        case YAP_PARSER_FINISH:
-            buffer_reset(admin->write_buffer);
-            return ADMIN_SERVER_STATE_CMD_RES;
-        default:
-            break;
+            case YAP_PARSER_ERROR:
+                log_error("Could not parse command");
+            case YAP_PARSER_FINISH:
+                buffer_reset(admin->write_buffer);
+                return ADMIN_SERVER_STATE_CMD_RES;
+            default:
+                break;
         }
         break;
     }

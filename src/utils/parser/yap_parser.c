@@ -115,6 +115,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
     case YAP_STATE_CONFIG:
         if (yap_parser_is_valid_config(byte)) {
             parser->config = byte;
+            parser->state = YAP_STATE_CONFIG_VALUE;
             log_debug("Config correcta %d", byte);
             return YAP_PARSER_NOT_FINISHED;
         }
@@ -149,6 +150,7 @@ enum yap_result yap_parser_consume(struct buffer* buffer, struct yap_parser* par
         result = yap_parser_feed(parser, buffer_read(buffer));
     }
     parser->result = result;
+    log_debug("Parsed complete\n");
     return result;
 }
 
