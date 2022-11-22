@@ -537,7 +537,7 @@ accept_new_connection(socket_descriptor server_socket) {
         return -1;
     }
     char addr_buf[ADDR_STR_MAX_SIZE];
-    log_info("New connection to %s", print_address((struct sockaddr*)&client_addr, addr_buf));
+    // log_info("New connection to %s", print_address((struct sockaddr*)&client_addr, addr_buf)); // TODO: connection attempt
 
     return new_connection;
 }
@@ -949,10 +949,6 @@ static bool authenticate_user(struct auth_negociation_parser* parser) {
     return user_list_contains(allowed_users, username, password);
 }
 
-static void print_user(struct user_list_user* usr_ptr) {
-    log_info("- %s", usr_ptr->username);
-}
-
 static void authentication_write_init(const unsigned state, struct selector_key* key) {
     struct auth_struct* client = &GET_DATA(key)->client.auth;
 
@@ -966,9 +962,7 @@ static void authentication_write_init(const unsigned state, struct selector_key*
             char username[MAX_NULL_TERMINATED_STRING_SIZE];
             strncpy(username, (char*)client->parser->username, client->parser->username_length);
             username[client->parser->username_length] = '\0';
-            log_info("User %s is not a valid user", username);
-            log_info("Valid users:");
-            user_list_for_each(admin_server_get_allowed_users(), print_user);
+            log_error("User %s is not a valid user (from %s)", username, client->to_str);
         }
     }
 
@@ -1019,7 +1013,7 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
     server_metrics.historic_connections++;
     server_metrics.concurrent_connections++;
 
-    log_debug("Requesting address from client");
+    log_info("New client connected: %s", client->to_str);
 
     client->parser = request_parser_init();
     client->fd = &GET_DATA(key)->client_fd;
@@ -1272,6 +1266,7 @@ static unsigned finish_address_resolution(struct selector_key* key) {
 }
 
 static void start_connection(const unsigned state, struct selector_key* key) {
+    selector_set_interest(key->s, GET_DATA(key)->client_fd, OP_NOOP);
     struct client_data* data = key->data;
     struct connecting_struct* origin = &GET_DATA(key)->origin.connecting;
 
@@ -1330,7 +1325,7 @@ static unsigned check_connection_with_origin(struct selector_key* key) {
     int connection_status = getpeername(*origin->fd, (struct sockaddr*)&GET_DATA(key)->origin_addr, &GET_DATA(key)->origin_addr_len) == 0;
 
     if (connection_status != 0) {
-        log_info("Could not connect to %s", print_address_info(origin->resolved_addresses_list->current, origin->to_str));
+        log_error("Could not connect to %s", print_address_info(origin->resolved_addresses_list->current, origin->to_str));
         if (origin->resolved_addresses_list->current->ai_next != NULL) {
             origin->resolved_addresses_list->current = origin->resolved_addresses_list->current->ai_next;
             start_connection(CONNECTING, key);
@@ -1491,7 +1486,7 @@ static unsigned sniff_read(struct selector_key* key) {
         case POP3_FINISH_OK:
             // se detectó usuario y contraseña, guardar
             user_list_add(sniffed_users, source->parser->user, source->parser->pass);
-            log_debug("Sniffed user (%s:%s)", source->parser->user, source->parser->pass);
+            log_info("Sniffed user (%s:%s)", source->parser->user, source->parser->pass);
             break;
         }
         break;
@@ -1679,6 +1674,7 @@ bool socks5_update_client_buffer_size(uint16_t new_size) {
         return false;
     log_debug("Client buffer updated");
     client_buffer_size = new_size;
+    log_info("Client buffer size changed to %d", new_size);
     return true;
 }
 

@@ -320,7 +320,7 @@ accept_new_connection(socket_descriptor server_socket) {
         return -1;
     }
     char addr_buf[ADDR_STR_MAX_SIZE];
-    log_info("New connection to %s", print_address((struct sockaddr*)&admin_addr, addr_buf));
+    // log_info("New connection to %s", print_address((struct sockaddr*)&admin_addr, addr_buf)); //TODO: new connection attempt
 
     return new_connection;
 }
@@ -762,6 +762,7 @@ static void set_config(void* config) {
         tv.tv_sec = conf_req->new_value;
 
         selector_set_timeout(conf_req->selector, tv);
+        log_info("Timeout changed to %ds", conf_req->new_value);
         *write_ptr = OK_STATUS;
         payload.size++;
         break;

@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
         .stderr_enabled = true,
         .level_config = {
             DEFAULT_ERROR_CONFIG,  // ERROR
-            DEFAULT_DEBUG_CONFIG,  // DEBUG
+            {0},  // DEBUG
             DEFAULT_INFO_CONFIG,   // INFO
             DEFAULT_WARNING_CONFIG // WARNING
         } };
