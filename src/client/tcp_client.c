@@ -28,7 +28,8 @@ int main(int argc, char* argv[]) {
 
 
     struct yap_parser* parser = yap_parser_init();
-    struct n_conf* n_parser = malloc(sizeof(struct n_conf));
+    struct n_conf* n_parser = calloc(sizeof(struct n_conf));
+    memset(n_parser->dest_addr, 0, BUFF_SIZE);
     struct pop3_parser* pop3_parser = pop3_parser_init();
     struct auth_negociation_parser* auth_parser = auth_negociation_parser_init();
 
@@ -187,7 +188,6 @@ int main(int argc, char* argv[]) {
         while (status == CONNECTED) {
             if (ask_command_socks(sock_fd, n_parser) < 0) {
                 close_connection(sock_fd);
-                free(n_parser->dest_addr);
                 exit_status = -1;
                 goto finish;
             }
