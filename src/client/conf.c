@@ -144,7 +144,6 @@ bool n_parse_conf(const int argc, char** argv, struct n_conf* args) {
                 args->cmd = cmd(optarg);
                 break;
             case 'A':
-                printf("Connecting to port %s\n", optarg);
                 args->atyp = optarg;
                 break;
             case 'a':
