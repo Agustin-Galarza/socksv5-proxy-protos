@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
 
 
     struct yap_parser* parser = yap_parser_init();
-    struct n_conf* n_parser = calloc(sizeof(struct n_conf));
+    struct n_conf* n_parser = calloc(1, sizeof(struct n_conf));
     memset(n_parser->dest_addr, 0, BUFF_SIZE);
     struct pop3_parser* pop3_parser = pop3_parser_init();
     struct auth_negociation_parser* auth_parser = auth_negociation_parser_init();
