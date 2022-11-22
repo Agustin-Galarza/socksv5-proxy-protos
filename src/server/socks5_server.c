@@ -928,6 +928,7 @@ static unsigned read_authentication(struct selector_key* key) {
         auth_negociation_parser_free(client->parser);
         return CONNECTION_ERROR;
     case 0:
+        auth_negociation_parser_free(client->parser);
         return CONNECTION_DONE;
     default:
         buffer_write_adv(client->write_buffer, bytes_read);
@@ -1490,6 +1491,11 @@ static unsigned sniff_read(struct selector_key* key) {
         if (shutdown(*source->target->fd, SHUT_WR)) {
             log_error("Could not shutdown %s: %s", source->target->to_str, strerror(errno));
             return CONNECTION_ERROR;
+        }
+
+        if (source->parser != NULL) {
+            pop3_parser_free(get_sniff_struct_ptr(key)->parser);
+            get_sniff_struct_ptr(key)->parser = NULL;
         }
 
         break;
