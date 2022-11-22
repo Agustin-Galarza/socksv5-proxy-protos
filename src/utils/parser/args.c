@@ -53,6 +53,8 @@ usage(const char* progname) {
         "\n"
         "   -h               Imprime la ayuda y termina.\n"
         "   -p <SOCKS port>  Puerto entrante conexiones SOCKS.\n"
+        "   -l               Specify address where SOCKS server will listen. Default is localhost.\n"
+        "   -L               Specify address where admin server will listen. Default is localhost.\n"
         "   -P <conf port>   Puerto entrante conexiones admin\n"
         "   -u <name>:<pass> Usuario y contraseña de usuario que puede usar el proxy. Hasta 10.\n"
         "   -v               Imprime información sobre la versión versión y termina.\n"
@@ -65,20 +67,28 @@ void
 parse_args(const int argc, char** argv, struct socks5args* args) {
     memset(args, 0, sizeof(*args)); // sobre todo para setear en null los punteros de users
 
+    args->socks_host = "localhost";
     args->socks_port = 1080;
+    args->admin_host = "localhost";
     args->admin_port = 8080;
 
     int c;
     int nusers = 0;
 
     while (true) {
-        c = getopt(argc, argv, "hp:P:u:v");
+        c = getopt(argc, argv, "hp:P:l:L:u:v");
         if (c == -1)
             break;
 
         switch (c) {
         case 'h':
             usage(argv[0]);
+            break;
+        case 'l':
+            args->socks_host = optarg;
+            break;
+        case 'L':
+            args->admin_host = optarg;
             break;
         case 'p':
             args->socks_port = port(optarg);

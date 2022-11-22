@@ -1658,6 +1658,10 @@ static void close_connection_normally(const unsigned state, struct selector_key*
 uint8_t choose_socks5_method(uint8_t methods[2]) {
     if (methods[0] == NO_ACCEPTABLE_METHODS)
         return NO_ACCEPTABLE_METHODS;
+
+    if (user_list_size(admin_server_get_allowed_users()) > 0)
+        return (methods[0] == USERNAME_PASSWORD || methods[1] == USERNAME_PASSWORD) ? USERNAME_PASSWORD : NO_ACCEPTABLE_METHODS;
+
     if (methods[1] == NO_ACCEPTABLE_METHODS) {
         return methods[0];
     }

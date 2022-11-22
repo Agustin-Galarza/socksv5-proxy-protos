@@ -45,6 +45,7 @@ int main(int argc, char* argv[]) {
             exit_status = 1;
             goto finish;
         }
+        port = conf.port;
 
         if (conf.version == 6) {
             printf("Connecting to IPv6\n");
@@ -93,7 +94,7 @@ int main(int argc, char* argv[]) {
             }
 
             status = buff[1];
-            if (status == FAILED_AUTH){
+            if (status == FAILED_AUTH) {
                 printf("Invalid credentials.\n");
                 close_connection(sock_fd);
                 exit_status = -1;
@@ -146,7 +147,7 @@ int main(int argc, char* argv[]) {
 
         status = FAILED_AUTH;
 
-        while (status != SUCCESS_AUTH){
+        while (status != SUCCESS_AUTH) {
 
             if (send_socks_credentials(sock_fd, auth_parser) < 0) {
                 close_connection(sock_fd);
@@ -168,7 +169,7 @@ int main(int argc, char* argv[]) {
             }
 
             status = buff[1];
-            if (status != SUCCESS_AUTH){
+            if (status != SUCCESS_AUTH) {
                 printf("Invalid credentials.\n");
                 close_connection(sock_fd);
                 exit_status = -1;

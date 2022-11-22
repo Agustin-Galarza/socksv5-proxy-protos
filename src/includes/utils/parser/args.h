@@ -11,10 +11,10 @@ struct users {
 };
 
 struct socks5args {
+    char* socks_host;
     unsigned short  socks_port;
-
+    char* admin_host;
     unsigned short  admin_port;
-
     struct users    users[MAX_USERS];
 };
 

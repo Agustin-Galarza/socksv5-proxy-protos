@@ -38,7 +38,9 @@ int main(int argc, char** argv) {
     config_args.initial_connections = 3;
     config_args.max_clients = 500;
 
+    config_args.socks5_addr = socks5_args.socks_host;
     config_args.port = socks5_args.socks_port;
+    config_args.admin_addr = socks5_args.admin_host;
     config_args.admin_port = socks5_args.admin_port;
 
     memcpy(config_args.users, socks5_args.users, MAX_USERS * sizeof(struct users));
