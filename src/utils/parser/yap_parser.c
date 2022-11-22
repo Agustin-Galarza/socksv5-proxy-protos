@@ -180,10 +180,10 @@ int yap_parser_is_valid_command(uint8_t command) {
 
 // Checkeo que sea una metrica valida
 int yap_parser_is_valid_metric(uint8_t metric) {
-    return metric >= YAP_METRIC_HISTORICAL_CONNECTIONS && metric <= YAP_METRIC_BYTES_SEND;
+    return metric <= YAP_METRIC_BYTES_SEND;
 }
 
 // Checkeo que sea una configuracion valida
 int yap_parser_is_valid_config(uint8_t config) {
-    return config >= YAP_CONFIG_TIMEOUTS && config <= YAP_CONFIG_BUFFER_SIZE;
+    return config <= YAP_CONFIG_BUFFER_SIZE;
 }

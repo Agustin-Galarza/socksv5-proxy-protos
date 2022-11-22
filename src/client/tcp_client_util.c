@@ -148,7 +148,7 @@ int ask_metric(uint8_t* metric) {
     if (*metric == '\n')
         return -1;
 
-    for (int i = 0; i < strlen((char*)metric); i++) {
+    for (size_t i = 0; i < strlen((char*)metric); i++) {
         if (metric[i] == '\n')
             metric[i] = 0;
     }
@@ -353,6 +353,8 @@ int print_response(struct yap_parser* parser, int sock_fd) {
 
     case YAP_STATE_CONFIG:
         return print_config(sock_fd, parser);
+    default:
+        break;
     }
 
     return -1;
@@ -734,6 +736,8 @@ int send_command(int sock_fd, struct yap_parser* parser) {
             break;
         uint16_t toSend = htons(parser->config_value);
         res = send(sock_fd, &toSend, 2, 0);
+    case YAP_NO_COMMAND:
+        break;
     }
 
     if (res < 0)
@@ -800,7 +804,7 @@ void handle_input(uint8_t* input) {
 }
 
 void clean_input(uint8_t* string) {
-    for (int i = 0; i < strlen((char*)string); i++) {
+    for (size_t i = 0; i < strlen((char*)string); i++) {
         if (string[i] == '\n')
             string[i] = 0;
     }

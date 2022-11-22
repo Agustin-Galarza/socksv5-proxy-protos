@@ -127,7 +127,7 @@ static void get_all_users(void* _);
 static void get_metric(void* metric);
 static void add_user(void* user);
 static void remove_user(void* user);
-static struct config_change_request {
+struct config_change_request {
     fd_selector selector;
     uint8_t config_number;
     uint16_t new_value;
@@ -235,7 +235,7 @@ bool admin_server_init(user_list_t* initial_users) {
 void admin_server_close() {
     server_status = ADMIN_SERVER_STATUS_ERROR;
     user_list_free(allowed_users);
-    for (int i = 0; i < admin_server_data.max_clients; i++) {
+    for (size_t i = 0; i < admin_server_data.max_clients; i++) {
         if (admins[i] != NULL) {
             selector_unregister_fd(admins[i]->selector, admins[i]->admin_fd);
             admins[i] = NULL;
@@ -678,7 +678,7 @@ static void get_all_users(void* _) {
     // Reservo el espacio para escribir el tamaño final de la lista
     buffer_write_adv(&users_buff, list_len_bytes);
 
-    for (int i = 0; i < users_amount; i++) {
+    for (size_t i = 0; i < users_amount; i++) {
         struct user_list_user usr = user_list_get(allowed_users, i);
 
         size_t aux;

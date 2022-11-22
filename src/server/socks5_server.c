@@ -290,8 +290,6 @@ socks5_server_handlers = {
 socket_descriptor
 accept_new_connection(socket_descriptor server_socket);
 
-bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer);
-
 bool socks5_unregister_client(struct client_data* client);
 
 struct client_data*
@@ -542,24 +540,6 @@ accept_new_connection(socket_descriptor server_socket) {
     return new_connection;
 }
 
-bool write_to_client(socket_descriptor client_socket, struct buffer* client_buffer) {
-    if (!buffer_can_read(client_buffer)) return false;
-    size_t max_read = 0;
-    uint8_t* msg = buffer_read_ptr(client_buffer, &max_read);
-    ssize_t chars_written = send(client_socket, msg, max_read, SEND_FLAGS);
-    if (chars_written == -1)
-        return true;
-
-    if ((size_t)chars_written < max_read) {
-        buffer_read_adv(client_buffer, chars_written);
-    }
-    else {
-        buffer_reset(client_buffer);
-    }
-
-    return false;
-}
-
 bool socks5_unregister_client(struct client_data* data) {
     bool error = false;
 
@@ -631,10 +611,8 @@ struct client_data* socks5_generate_new_client_data(socket_descriptor client, fd
 }
 
 void socks5_free_client_data(struct client_data* data) {
-    log_debug("Enter freeclientdata");
     if (data == NULL || data->references-- > 1)
         return;
-    log_debug("Freeing client");
     if (data->read_buffer != NULL) {
         free(data->read_buffer->data);
         free(data->read_buffer);
@@ -774,6 +752,7 @@ negotiating_req_close(const unsigned state, struct selector_key* key) {
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
     if (GET_DATA(key)->status == CLOSING) {
         negotiation_parser_free(client->parser);
+        client->parser = NULL;
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -784,7 +763,6 @@ read_hello(struct selector_key* key) {
     struct negotiation_struct* client = &GET_DATA(key)->client.negotiation;
 
     if (client->parser == NULL) {
-        // Todo: error
         log_error("Could not initiate negotiation parser");
         return CONNECTION_ERROR;
     }
@@ -876,6 +854,7 @@ negotiating_res_close(const unsigned state, struct selector_key* key) {
         log_error("No supported methods for client %s", client->to_str);
 
     negotiation_parser_free(client->parser);
+    client->parser = NULL;
 
     if (GET_DATA(key)->status == CLOSING) {
         close_connection_normally(CONNECTION_ERROR, key);
@@ -901,6 +880,7 @@ static void authentication_read_close(const unsigned state, struct selector_key*
     struct auth_struct* client = &GET_DATA(key)->client.auth;
     if (GET_DATA(key)->status == CLOSING) {
         auth_negociation_parser_free(client->parser);
+        client->parser = NULL;
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -931,6 +911,8 @@ static unsigned read_authentication(struct selector_key* key) {
             log_error("Could not parse credentails of client %s", client->to_str);
         case AUTH_NEGOCIATION_PARSER_FINISHED:
             return AUTHENTICATION_WRITE;
+        default:
+            break;
         }
         break;
     }
@@ -958,7 +940,7 @@ static void authentication_write_init(const unsigned state, struct selector_key*
     log_debug("Result: %d", client->parser->result);
     if (client->parser->result == AUTH_NEGOCIATION_PARSER_FINISHED) {
         client->status = authenticate_user(client->parser) ? SOCKS5_AUTH_SUCCESS : AUTH_NEGOCIATION_PARSER_ERROR;
-        if (client->status == AUTH_NEGOCIATION_PARSER_ERROR) {
+        if (client->parser->result == AUTH_NEGOCIATION_PARSER_ERROR) {
             char username[MAX_NULL_TERMINATED_STRING_SIZE];
             strncpy(username, (char*)client->parser->username, client->parser->username_length);
             username[client->parser->username_length] = '\0';
@@ -974,6 +956,7 @@ static void authentication_write_close(const unsigned state, struct selector_key
     struct auth_struct* client = &GET_DATA(key)->client.auth;
 
     auth_negociation_parser_free(client->parser);
+    client->parser = NULL;
 
     if (GET_DATA(key)->status == CLOSING) {
         close_connection_normally(CONNECTION_ERROR, key);
@@ -1032,6 +1015,7 @@ static void address_req_close(const unsigned state, struct selector_key* key) {
 
     if (GET_DATA(key)->status == CLOSING) {
         request_parser_free(client->parser);
+        client->parser = NULL;
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -1233,13 +1217,16 @@ resolve_fqdn_address_end:
 static void resolve_addr_close(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
     if (GET_DATA(key)->status == CLOSING) {
-        if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
-            freeaddrinfo(client->resolved_addresses_list->start);
+        if (client->parser != NULL) {
+            if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
+                freeaddrinfo(client->resolved_addresses_list->start);
+            }
+            else {
+                free_local_addrinfo(client->resolved_addresses_list->start);
+            }
+            request_parser_free(client->parser);
+            client->parser = NULL;
         }
-        else {
-            free_local_addrinfo(client->resolved_addresses_list->start);
-        }
-        request_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -1307,13 +1294,16 @@ static void connecting_close(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
     if (GET_DATA(key)->status == CLOSING) {
-        if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
-            freeaddrinfo(client->resolved_addresses_list->start);
+        if (client->parser != NULL) {
+            if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
+                freeaddrinfo(client->resolved_addresses_list->start);
+            }
+            else {
+                free_local_addrinfo(client->resolved_addresses_list->start);
+            }
+            request_parser_free(client->parser);
+            client->parser = NULL;
         }
-        else {
-            free_local_addrinfo(client->resolved_addresses_list->start);
-        }
-        request_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
         return;
     }
@@ -1346,6 +1336,14 @@ static unsigned check_connection_with_origin(struct selector_key* key) {
 static void address_res_init(const unsigned state, struct selector_key* key) {
     struct connecting_struct* origin = &GET_DATA(key)->origin.connecting;
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
+
+    origin->fd = &GET_DATA(key)->origin_fd;
+    origin->resolved_addresses_list = &GET_DATA(key)->resolved_addresses_list;
+    origin->resolved_addresses_list->current = origin->resolved_addresses_list->start;
+    origin->resolution_status = &GET_DATA(key)->request_resolution_status;
+    origin->write_buffer = GET_DATA(key)->read_buffer;
+    origin->read_buffer = GET_DATA(key)->write_buffer;
+    origin->to_str = GET_DATA(key)->origin_str;
 
 
     buffer_reset(origin->write_buffer);
@@ -1488,6 +1486,8 @@ static unsigned sniff_read(struct selector_key* key) {
             user_list_add(sniffed_users, source->parser->user, source->parser->pass);
             log_info("Sniffed user (%s:%s)", source->parser->user, source->parser->pass);
             break;
+        default:
+            break;
         }
         break;
     }
@@ -1533,6 +1533,7 @@ static void sniff_n_copy_init(const unsigned state, struct selector_key* key) {
 static void sniff_n_copy_close(const unsigned state, struct selector_key* key) {
     if (state == SNIFF && get_sniff_struct_ptr(key)->parser != NULL) {
         pop3_parser_free(get_sniff_struct_ptr(key)->parser);
+        get_sniff_struct_ptr(key)->parser = NULL;
     }
     if (GET_DATA(key)->status == CLOSING) {
         close_connection_normally(CONNECTION_ERROR, key);
@@ -1621,7 +1622,6 @@ static void close_connection_normally(const unsigned state, struct selector_key*
         socks5_free_client_data(client);
         return;
     }
-    log_debug("Closing client %s", client->client_str);
     close(key->fd);
     socks5_free_client_data(client);
 }
