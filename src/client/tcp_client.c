@@ -92,7 +92,12 @@ int main(int argc, char* argv[]) {
             }
 
             status = buff[1];
-            printf("Invalid credentials. Please try again\n");
+            if (status == FAILED_AUTH){
+                printf("Invalid credentials.\n");
+                close_connection(sock_fd);
+                exit_status = -1;
+                goto finish;
+            }
 
             putchar('\n');
         }
@@ -151,6 +156,7 @@ int main(int argc, char* argv[]) {
         while (status == CONNECTED) {
             if (ask_command_socks(sock_fd, n_parser) < 0) {
                 close_connection(sock_fd);
+                free(n_parser->dest_addr);
                 exit_status = -1;
                 goto finish;
             }
@@ -159,7 +165,6 @@ int main(int argc, char* argv[]) {
 
 finish:
     yap_parser_free(parser);
-    free(n_parser->dest_addr);
     free(n_parser);
     pop3_parser_free(pop3_parser);
     auth_negociation_parser_free(auth_parser);
