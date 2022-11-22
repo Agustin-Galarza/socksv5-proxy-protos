@@ -69,7 +69,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         else if (parser->username_current == parser->username_length) {
             parser->state = YAP_STATE_ADD_PASS;
             log_debug("Username completa: %s", parser->username);
-            return YAP_PARSER_FINISH;
+            return YAP_PARSER_NOT_FINISHED;
         }
         break;
     case YAP_STATE_ADD_PASS:
@@ -95,7 +95,7 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         }
         else if (parser->username_current == parser->username_length) {
             log_debug("Username completa: %s", parser->username);
-            return YAP_PARSER_FINISH;
+            return YAP_PARSER_NOT_FINISHED;
         }
         break;
     case YAP_STATE_REMOVE_PASS:
