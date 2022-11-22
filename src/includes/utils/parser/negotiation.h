@@ -9,7 +9,7 @@
 #define NO_AUTENTICATION 0x00
 #define USERNAME_PASSWORD 0x02
 #define NO_ACCEPTABLE_METHODS 0xFF
-#define VERSION 0x05
+#define SOCKS_VERSION 0x05
 
 
 // Estados finales de la negociacion

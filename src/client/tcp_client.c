@@ -5,33 +5,45 @@
 #include "utils/logger/logger.h"
 #include "client/tcp_client_util.h"
 #include "client/conf.h"
+#include "utils/parser/yap_negociation.h"
 
 int main(int argc, char* argv[]) {
     int exit_status = 0;
-    char* err_msg, * success_msg = "OK!\n";
+    char * success_msg = "OK!\n";
     tcp_conf conf = {
-        .port = 1080, // default port
+        .addr = "127.0.0.1",
+        .port = 8080, // default port
         .version = 4, //default version
+    };
+
+    struct negotiation_parser n_config = {
+            .version = 5, //default version
     };
 
     int tries = 0;
     uint16_t status = FAILED_AUTH;
     uint8_t username[CREDS_LEN] = { 0 }, password[CREDS_LEN] = { 0 };
 
+    int protocol = ask_protocol(argc, argv);
+
+
     struct yap_parser* parser = yap_parser_init();
-
-
-    if (!parse_conf(argc, argv, &conf)) {
-        err_msg = "Error parsing configuration from arguments";
-        exit_status = 1;
-    }
+    struct n_conf * n_parser = malloc(sizeof(struct n_conf));
+    struct pop3_parser * pop3_parser = pop3_parser_init();
+    struct auth_negociation_parser * auth_parser = auth_negociation_parser_init();
 
     int sock;
     struct sockaddr_in6 ipv6_address;
     struct sockaddr_in ipv4_address;
     unsigned short port = conf.port;
 
-    while (status != SUCCESS_AUTH) {
+
+    if (protocol == YAP){
+        if (!parse_conf(argc, argv, &conf)) {
+            printf("Error parsing configuration from arguments");
+            exit_status = 1;
+            goto finish;
+        }
 
         if (conf.version == 6) {
             printf("Connecting to IPv6\n");
@@ -47,87 +59,109 @@ int main(int argc, char* argv[]) {
             goto finish;
         }
 
-        printf("Successfully connected\n");  // TODO: remove
+        printf("Successfully connected\n"); 
 
-        if (ask_credentials(username, password) < 0)
-            continue;
+        while (status != SUCCESS_AUTH) {
 
-        if (tries++ >= MAX_AUTH_TRIES) {
-            printf("Max number of tries reached\n");
-            exit_status = -1;
-            close_connection(sock);
-            goto finish;
+            if (ask_credentials(username, password) < 0)
+                continue;
+
+            if (tries++ >= MAX_AUTH_TRIES) {
+                printf("Max number of tries reached\n");
+                exit_status = -1;
+                close_connection(sock);
+                goto finish;
+            }
+
+            if (send_credentials(sock, username, password) < 0) {
+                close_connection(sock);
+                exit_status = -1;
+                goto finish;
+            }
+
+            const size_t server_response_size = 2;
+            uint8_t buff[server_response_size];
+
+            errno = 0;
+            int bytes_read = read(sock, buff, server_response_size);
+            if (bytes_read == -1) {
+                fprintf(stderr, "Could not read response from server: %s", strerror(errno));
+                close_connection(sock);
+                exit_status = -1;
+                goto finish;
+            }
+
+            status = buff[1];
+            printf("Invalid credentials. Please try again\n");
+
+            putchar('\n');
         }
 
-        if (send_credentials(sock, username, password) < 0) {
-            close_connection(sock);
-            exit_status = -1;
-            goto finish;
+        status = CONNECTED;
+
+        print_welcome();
+
+
+        while (status == CONNECTED) {
+
+            if (ask_command_yap(sock, parser) < 0) {
+                close_connection(sock);
+                exit_status = -1;
+                goto finish;
+            }
         }
-
-        const size_t server_response_size = 2;
-        uint8_t buff[server_response_size];
-
-        errno = 0;
-        int bytes_read = read(sock, buff, server_response_size);
-        if (bytes_read == -1) {
-            fprintf(stderr, "Could not read response from server: %s", strerror(errno));
-            close_connection(sock);
-            exit_status = -1;
-            goto finish;
-        }
-
-        status = buff[1];
-        printf("Status: %d", status); // TODO: remove
-
-        putchar('\n');
     }
+    else{
 
-    status = CONNECTED;
+        if (!n_parse_conf(argc, argv, &n_config, auth_parser, &port)) {
+            printf("Error parsing configuration from arguments");
+            exit_status = 1;
+            goto finish;
+        }
 
-    print_welcome();
+        sock = connect_to_ipv4(&ipv4_address, port, conf.addr);
 
-
-    while (status == CONNECTED) {
-
-        if (ask_command(sock, parser) < 0) {
-            close_connection(sock);
+        if (sock < 0) {
             exit_status = -1;
             goto finish;
         }
+
+        uint8_t to_send[] = {5, 1, 2};
+
+        char * buff = malloc(BUFF_SIZE);
+
+        if (send(sock, &to_send, 3, 0) <= 0)
+            return -1;
+
+        size_t bytes = read(sock, buff, BUFF_SIZE);
+
+        free(buff);
+
+        if (send_socks_credentials(sock, auth_parser) < 0) {
+                close_connection(sock);
+                exit_status = -1;
+                goto finish;
+        }
+
+
+        status = CONNECTED;
+
+        print_socks_welcome_msg();
+
+        while (status == CONNECTED) {
+            if (ask_command_socks(sock, n_parser) < 0) {
+                close_connection(sock);
+                exit_status = -1;
+                goto finish;
+            }
+        }
     }
-
-
-    // SOCKS Request _ AGUS
-
-    struct yap_negociation_parser* n_parser = yap_negociation_parser_init();
-    char* buffer = malloc(BUFF_SIZE);
-    uint16_t n_status = AUTH_FAIL;
-    n_conf n_config = {
-        .port = 1080, // default port
-        .version = 5, //default version
-    };
-
-    if (!n_parse_conf(argc, argv, &n_config)) {
-        err_msg = "Error parsing configuration from arguments";
-        exit_status = 1;
-    }
-    // uint8_t buffer[BUFF_SIZE];
-
-    // while(n_status != AUTH_SUCCESS){  
-    //     int bytes_read = read(sock, buffer, BUFF_SIZE);
-    //     if (bytes_read == -1) {
-    //         fprintf(stderr, "Could not read response from server: %s", strerror(errno));
-    //         close_connection(sock);
-    //         goto finish;
-    //     }
-
-    //     n_status = buff[1];
-    // }
 
 finish:
     yap_parser_free(parser);
-    negotiation_parser_free(n_parser);
+    free(n_parser);
+    pop3_parser_free(pop3_parser);
+    auth_negociation_parser_free(auth_parser);
 
     return exit_status;
 }

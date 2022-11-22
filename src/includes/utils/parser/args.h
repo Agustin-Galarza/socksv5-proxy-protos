@@ -26,5 +26,7 @@ struct socks5args {
 void
 parse_args(const int argc, char** argv, struct socks5args* args);
 
+void user(char* s, struct users* user);
+
 #endif
 

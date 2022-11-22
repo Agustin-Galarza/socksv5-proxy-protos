@@ -23,7 +23,7 @@ void negotiation_parser_free(struct negotiation_parser* parser) {
 enum negotiation_state negotiation_paser_feed(struct negotiation_parser* parser, uint8_t byte) {
     switch (parser->state) {
     case NEGOTIATION_VERSION:
-        if (byte == VERSION) {
+        if (byte == SOCKS_VERSION) {
             parser->version = byte;
             parser->state = NEGOTIATION_NMETHODS;
 

@@ -61,11 +61,9 @@ n_usage(const char* progname) {
     fprintf(stderr,
             "Usage: %s [OPTION]...\n"
             "\n"
-            "   -h               Help.\n"
-            "   -C               Specify CMD. REQUIRED\n"
-            "   -A               Specify ATYP. REQUIRED\n"
-            "   -a     Specify destination address. REQUIRED\n"
-            "   -p     Specify destination port. REQUIRED\n"
+            "   -h                  Help.\n",
+            "   -u <name>:<pass>    Username and password that the proxy can use\n",
+            "   -a <type>           Address type. <4> for IPv4; <DN> for domain name; <6> for IPv6\n",
             "\n",
             progname);
     exit(1);
@@ -83,11 +81,13 @@ bool parse_conf(const int argc, char** argv, struct tcp_conf* args) {
     while (true) {
         int option_index = 0;
 
-        c = getopt_long(argc, argv, "hL:P:46", NULL, &option_index);
+        c = getopt_long(argc, argv, "YhL:P:46", NULL, &option_index);
         if (c == -1)
             break;
 
         switch (c) {
+            case 'Y':
+                break;
             case 'h':
                 usage(argv[0]);
                 break;
@@ -120,37 +120,32 @@ bool parse_conf(const int argc, char** argv, struct tcp_conf* args) {
     return true;
 }
 
-bool n_parse_conf(const int argc, char** argv, struct n_conf* args) {
+bool n_parse_conf(const int argc, char** argv, struct negotiation_parser * args, struct auth_negociation_parser * auth_parser, uint16_t * port) {
     memset(args, 0, sizeof(*args));
 
-    args->rsv = 0;
-    args->dest_port = 8080;
-
-
     int c;
+
+    args->version = 5;
 
     while (true) {
         int option_index = 0;
 
-        c = getopt_long(argc, argv, "hC:A:a:p:", NULL, &option_index);
+        c = getopt_long(argc, argv, "SP:hu:", NULL, &option_index);
         if (c == -1)
             break;
 
         switch (c) {
+            case 'S':
+                break;
             case 'h':
                 n_usage(argv[0]);
                 break;
-            case 'C':
-                args->cmd = cmd(optarg);
+            case 'u':
+                args->nmethods = 1;
+                socks_user(optarg, auth_parser);
                 break;
-            case 'A':
-                args->atyp = optarg;
-                break;
-            case 'a':
-                args->dest_addr=optarg;
-                break;
-            case 'p':
-                args->dest_port=port(optarg);
+            case 'P':
+                *port = atoi(optarg);
                 break;
             default:
                 fprintf(stderr, "unknown argument %d.\n", c);
@@ -166,4 +161,25 @@ bool n_parse_conf(const int argc, char** argv, struct n_conf* args) {
         exit(1);
     }
     return true;
+}
+
+void socks_user (char * s, struct auth_negociation_parser * parser){
+    int i;
+    int pass_start = 0;
+    char * username = s, * password;
+    int len = strlen(s);
+    for (i = 0; i < len; i++) {
+        if (s[i] == ':'){
+            s[i] = 0;
+            password = s+i+1;
+            pass_start = i+1;
+            break;
+        }
+    }
+
+    strcpy((char*)parser->username, (char*)username);
+    parser->username_length = strlen(username);
+
+    strncpy((char*) parser->password, (char*) username+pass_start, len-pass_start+1);
+    parser->password_length = strlen((char*)parser->password);
 }

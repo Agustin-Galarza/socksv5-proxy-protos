@@ -6,11 +6,10 @@
 #include "tcp_client_util.h"
 #include <string.h>
 #include <stdbool.h>
+#include "utils/parser/args.h"
+#include "utils/parser/auth_negociation.h"
 
 #define TOKEN_ENV_VAR   "TOKEN"
-#define COMMAND_ARGUMENTS "127.0.0.1"
-#define CONF_ARGUMENTS  ":hL:P:"
-#define ARGUMENTS   CONF_ARGUMENTS COMMAND_ARGUMENTS
 
 #define IP_V4 1
 #define DOMAINNAME 3
@@ -35,7 +34,7 @@ typedef struct n_conf {
     int rsv;
     int atyp;
     char* dest_addr;
-    char* dest_port;
+    unsigned short dest_port;
 } n_conf;
 
 /**
@@ -43,6 +42,7 @@ typedef struct n_conf {
  * tcp-conf con defaults o la seleccion humana.
  */
 bool parse_conf(const int argc, char **argv, struct tcp_conf* tcp_conf);
-bool n_parse_conf(const int argc, char **argv, struct n_conf* n_conf);
+bool n_parse_conf(const int argc, char** argv, struct negotiation_parser * args, struct auth_negociation_parser * auth_parser, uint16_t * port);
+void socks_user (char * s, struct auth_negociation_parser * parser);
 
 #endif

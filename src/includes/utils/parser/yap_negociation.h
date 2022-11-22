@@ -32,7 +32,7 @@
 
 */
 
-#define VERSION 0x01
+#define YAP_VERSION 0x01
 #define MAX_STR_LEN 255
 #define MAX_USERNAME MAX_STR_LEN
 #define MAX_PASSWORD MAX_STR_LEN
