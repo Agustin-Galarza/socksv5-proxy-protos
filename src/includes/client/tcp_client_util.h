@@ -62,14 +62,13 @@ int send_command(int sock_fd, struct yap_parser * parser);
 void print_status(uint16_t status);
 int print_response(struct yap_parser * parser, int socket);
 void print_welcome();
-int print_added_user(int socket, struct yap_parser * parser);
-int print_removed_user(int socket, struct yap_parser * parser);
 int print_user_list(int socket, struct yap_parser * parser);
 int print_metric(int socket, struct yap_parser * parser);
 int print_config(int socket, struct yap_parser * parser);
 int print_historical_connections(char* buffer);
 int print_concurrent_connections(char* buffer);
 int print_bytes_sent(char* buffer);
+int print_user_command(int socket, struct yap_parser* parser);
 
 int close_connection(int socket_fd);
 
@@ -77,6 +76,8 @@ void handle_quit(int sock_fd);
 void handle_help();
 void handle_metrics();
 void handle_config();
+void handle_input(uint8_t* input);
+void clean_input(uint8_t* string);
 
 
 #endif

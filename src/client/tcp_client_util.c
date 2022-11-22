@@ -226,9 +226,9 @@ int print_response(struct yap_parser* parser, int socket) {
 int print_user_command(int socket, struct yap_parser* parser) {
 
     struct buffer buf;
-    buffer_init(&buf, BUFF_SIZE * 2 + 3, 0);
+    buffer_init(&buf, BUFF_SIZE * 2 + 3, malloc(BUFF_SIZE*2+3));
 
-    buffer_write(&buf, &parser->command);
+    buffer_write(&buf, parser->command);
 
     uint8_t username[BUFF_SIZE];
     printf("Enter username: ");
@@ -251,9 +251,50 @@ int print_user_command(int socket, struct yap_parser* parser) {
         buffer_write(&buf, password[i]);
 
 
-    send(socket, buf.data, 3 + username_len + password_len, 0);
+    if (send(socket, buf.data, 3 + username_len + password_len, 0) < 0)
+        return -1;
 
-    printf("$> ");
+    char* buffer = malloc(BUFF_SIZE);
+    size_t bytes = read(socket, buffer, BUFF_SIZE);
+
+    if (bytes == 0) {
+        free(buffer);
+        return -1;
+    }
+
+    char* buffer_ref = buffer;
+    buffer++;
+
+    int ret = -1;
+    switch (*buffer) {
+        case 0:
+            if (parser->command == YAP_COMMANDS_ADD_USER)
+                printf("User added correctly\n");
+            else
+                printf("User removed correctly\n");
+            ret = 0;
+            break;
+
+        case 1:
+            if (parser->command == YAP_COMMANDS_ADD_USER)
+                printf("Max amount of users reached\n");
+            else
+                printf("Invalid user\n");
+            ret = 0;
+            break;
+
+        case 2:
+            if (parser->command == YAP_COMMANDS_ADD_USER)
+                printf("User already exists\n");
+            else
+                printf("Error removing user\n");
+            ret = 0;
+            break;
+        default:
+            printf("Error adding user\n");
+    }
+    free(buffer_ref);
+    return ret;
 
     return 0;
 }
@@ -604,7 +645,6 @@ void handle_input(uint8_t* input) {
     fgets((char*)input, BUFF_SIZE, stdin);
     clean_input(input);
     printf("\n");
-    printf("$> ");
 
 }
 
