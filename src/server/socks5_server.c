@@ -24,6 +24,8 @@
 #define SOCKS_VER_BYTE 0x5
 #define SOCKS_AUTH_VER_BYTE 0x01
 
+#define MAX_SOCKS5_REPLY_SIZE 10
+
 #define SOCKS_RSV_BYTE 0x00
 
 #define GET_DATA(key) ((struct client_data*)key->data)
@@ -383,6 +385,8 @@ void set_interests(struct selector_key* key, struct copy_struct* ep);
 struct copy_struct* get_copy_struct_ptr(struct selector_key* key);
 
 struct sniff_struct* get_sniff_struct_ptr(struct selector_key* key);
+
+void free_local_addrinfo(struct addrinfo* ainfo);
 
 /*****************************
 |          Estados          |
@@ -1104,7 +1108,7 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
         addr_in = malloc(addr_len);
         memset(addr_in, 0, addr_len);
         addr_in->sin_family = AF_INET;
-        addr_in->sin_port = (in_port_t)*client->parser->port;
+        addr_in->sin_port = JOIN_PORT_ARRAY(client->parser->port);
         addr_in->sin_addr.s_addr = (in_addr_t)*client->parser->address;
 
         addr_info->ai_addr = (struct sockaddr*)addr_in;
@@ -1127,7 +1131,7 @@ static void resolve_addr_request(const unsigned state, struct selector_key* key)
         addr_in6 = malloc(addr_len);
         memset(addr_in6, 0, addr_len);
         addr_in6->sin6_family = AF_INET6;
-        addr_in6->sin6_port = (in_port_t)*client->parser->port;
+        addr_in6->sin6_port = JOIN_PORT_ARRAY(client->parser->port);
         memcpy(
             addr_in6->sin6_addr.s6_addr,
             client->parser->address,
@@ -1235,6 +1239,12 @@ resolve_fqdn_address_end:
 static void resolve_addr_close(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
     if (GET_DATA(key)->status == CLOSING) {
+        if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
+            freeaddrinfo(client->resolved_addresses_list->start);
+        }
+        else {
+            free_local_addrinfo(client->resolved_addresses_list->start);
+        }
         request_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
         return;
@@ -1302,6 +1312,12 @@ static void connecting_close(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
     if (GET_DATA(key)->status == CLOSING) {
+        if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
+            freeaddrinfo(client->resolved_addresses_list->start);
+        }
+        else {
+            free_local_addrinfo(client->resolved_addresses_list->start);
+        }
         request_parser_free(client->parser);
         close_connection_normally(CONNECTION_ERROR, key);
         return;
@@ -1358,11 +1374,18 @@ static void address_res_init(const unsigned state, struct selector_key* key) {
     selector_set_interest(key->s, GET_DATA(key)->client_fd, OP_WRITE);
 }
 
+
+
 static void address_res_close(const unsigned state, struct selector_key* key) {
     struct address_request_struct* client = &GET_DATA(key)->client.addr_req;
 
+    if (client->parser->address_type == REQUEST_ADDRESS_TYPE_DOMAINNAME) {
+        freeaddrinfo(client->resolved_addresses_list->start);
+    }
+    else {
+        free_local_addrinfo(client->resolved_addresses_list->start);
+    }
     request_parser_free(client->parser);
-    freeaddrinfo(client->resolved_addresses_list->start);
     GET_DATA(key)->resolved_addresses_list.start = NULL;
     GET_DATA(key)->resolved_addresses_list.current = NULL;
     if (GET_DATA(key)->status == CLOSING) {
@@ -1651,7 +1674,17 @@ uint16_t socks5_get_bytes_sent() {
     return server_metrics.bytes_sent >> 10;
 }
 
-void socks5_update_client_buffer_size(uint16_t new_size) {
+bool socks5_update_client_buffer_size(uint16_t new_size) {
+    if (new_size < MAX_SOCKS5_REPLY_SIZE)
+        return false;
     log_debug("Client buffer updated");
     client_buffer_size = new_size;
+    return true;
+}
+
+void free_local_addrinfo(struct addrinfo* ainfo) {
+    if (ainfo == NULL) return;
+    if (ainfo->ai_addr != NULL)
+        free(ainfo->ai_addr);
+    free(ainfo);
 }

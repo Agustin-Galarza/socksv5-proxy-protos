@@ -324,8 +324,6 @@ int print_metric(int socket, struct yap_parser* parser) {
     char* buffer = malloc(BUFF_SIZE);
     size_t bytes = read(socket, buffer, BUFF_SIZE);
 
-    printf("Buffer: %x %x %x %x %x %x\n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
-
     if (bytes == 0) {
         free(buffer);
         return -1;
@@ -364,13 +362,13 @@ int print_historical_connections(char* buffer) {
 int print_concurrent_connections(char* buffer) {
     uint16_t val;
     memcpy(&val, buffer, sizeof(uint16_t));
-    return printf("Concurrent connections: %.*s\n", 2, buffer);
+    return printf("Concurrent connections: %d\n", ntohs(val));
 }
 
 int print_bytes_sent(char* buffer) {
     uint16_t val;
     memcpy(&val, buffer, sizeof(uint16_t));
-    return printf("Bytes sent: %.*s\n", 2, buffer);
+    return printf("Bytes sent: %d\n", ntohs(val));
 }
 
 int print_user_list(int socket, struct yap_parser* parser) {

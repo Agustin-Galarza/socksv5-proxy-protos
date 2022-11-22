@@ -746,6 +746,7 @@ static void remove_user(void* user) {
     *status_ptr = user_list_remove(allowed_users, user_ptr->username, user_ptr->password) ? OK_STATUS : USER_NOT_FOUND_STATUS;
 }
 
+#define COULD_NOT_UPDATE 0x01
 static void set_config(void* config) {
     struct config_change_request* conf_req = config;
     payload.size = 0;
@@ -765,8 +766,7 @@ static void set_config(void* config) {
         payload.size++;
         break;
     case YAP_CONFIG_BUFFER_SIZE:
-        socks5_update_client_buffer_size(conf_req->new_value);
-        *write_ptr = OK_STATUS;
+        *write_ptr = socks5_update_client_buffer_size(conf_req->new_value) ? OK_STATUS : COULD_NOT_UPDATE;
         payload.size++;
         break;
     }

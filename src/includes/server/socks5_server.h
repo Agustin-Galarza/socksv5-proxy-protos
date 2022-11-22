@@ -17,6 +17,10 @@ uint16_t socks5_get_historic_connections();
 uint16_t socks5_get_concurrent_connections();
 uint16_t socks5_get_bytes_sent();
 
-void socks5_update_client_buffer_size(uint16_t new_size);
+/**
+ * Actualiza el tamaño del buffer para la comunicación de los clientes.
+ * Devuelve true si el valor fue actualizado, false en caso contrario.
+*/
+bool socks5_update_client_buffer_size(uint16_t new_size);
 
 #endif
