@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) {
         err_msg = "Error parsing configuration from arguments";
         exit_status = 1;
     }
+    // TODO: check args
 
     int sock;
     struct sockaddr_in6 ipv6_address;
@@ -32,6 +33,12 @@ int main(int argc, char* argv[]) {
     unsigned short port = conf.port;
 
     while (status != SUCCESS_AUTH) {
+        if (tries++ >= MAX_AUTH_TRIES) {
+            printf("Max number of tries reached\n");
+            exit_status = -1;
+            close_connection(sock);
+            goto finish;
+        }
 
         if (conf.version == 6) {
             printf("Connecting to IPv6\n");
@@ -52,12 +59,6 @@ int main(int argc, char* argv[]) {
         if (ask_credentials(username, password) < 0)
             continue;
 
-        if (tries++ >= MAX_AUTH_TRIES) {
-            printf("Max number of tries reached\n");
-            exit_status = -1;
-            close_connection(sock);
-            goto finish;
-        }
 
         if (send_credentials(sock, username, password) < 0) {
             close_connection(sock);
