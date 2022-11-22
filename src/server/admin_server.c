@@ -519,13 +519,13 @@ static unsigned read_cmd_request(struct selector_key* key) {
         buffer_write_adv(admin->write_buffer, read_status);
         enum yap_result result = yap_parser_consume(admin->write_buffer, admin->cmd_parser);
         switch (result) {
-            case YAP_PARSER_ERROR:
-                log_error("Could not parse command");
-            case YAP_PARSER_FINISH:
-                buffer_reset(admin->write_buffer);
-                return ADMIN_SERVER_STATE_CMD_RES;
-            default:
-                break;
+        case YAP_PARSER_ERROR:
+            log_error("Could not parse command");
+        case YAP_PARSER_FINISH:
+            buffer_reset(admin->write_buffer);
+            return ADMIN_SERVER_STATE_CMD_RES;
+        default:
+            break;
         }
         break;
     }
@@ -558,6 +558,7 @@ static void* build_cmd_args(fd_selector selector, struct yap_parser* parser) {
 
     case YAP_COMMANDS_CONFIG:;
         struct config_change_request* req = malloc(sizeof(struct config_change_request));
+        req->selector = selector;
         req->config_number = parser->config;
         req->new_value = parser->config_value;
         return req;
@@ -732,7 +733,9 @@ static void add_user(void* user) {
     if (user_list_contains(allowed_users, user_ptr->username, user_ptr->password)) {
         *status_ptr = USER_ALREADY_EXISTS_STATUS;
     }
-    *status_ptr = user_list_add(allowed_users, user_ptr->username, user_ptr->password) ? OK_STATUS : MAX_USERS_REACHED_STATAUS;
+    else {
+        *status_ptr = user_list_add(allowed_users, user_ptr->username, user_ptr->password) ? OK_STATUS : MAX_USERS_REACHED_STATAUS;
+    }
 }
 
 #define USER_NOT_FOUND_STATUS 0x01
@@ -745,17 +748,26 @@ static void remove_user(void* user) {
 
 static void set_config(void* config) {
     struct config_change_request* conf_req = config;
+    payload.size = 0;
 
     struct timespec tv;
+    uint8_t* write_ptr = payload.data;
+    *write_ptr = conf_req->config_number;
+    write_ptr++;
+    payload.size++;
     switch (conf_req->config_number) {
     case YAP_CONFIG_TIMEOUTS:
         tv.tv_nsec = 0;
         tv.tv_sec = conf_req->new_value;
 
         selector_set_timeout(conf_req->selector, tv);
+        *write_ptr = OK_STATUS;
+        payload.size++;
         break;
     case YAP_CONFIG_BUFFER_SIZE:
         socks5_update_client_buffer_size(conf_req->new_value);
+        *write_ptr = OK_STATUS;
+        payload.size++;
         break;
     }
 }

@@ -126,17 +126,18 @@ enum yap_result yap_parser_feed(struct yap_parser* parser, uint8_t byte) {
         break;
     case YAP_STATE_CONFIG_VALUE:
         if (parser->config_index < 2) {
-            parser->config_value = byte;
+            memcpy((uint8_t*)&parser->config_value + parser->config_index, &byte, 1);
+            // parser->config_value = byte;
             parser->config_index++;
             log_debug("Config value correcta %d", byte);
-            return YAP_PARSER_NOT_FINISHED;
-            break;
+            // return YAP_PARSER_NOT_FINISHED;
         }
         if (parser->config_index == 2) {
             parser->config_value = ntohs(parser->config_value);
             return YAP_PARSER_FINISH;
             break;
         }
+        break;
     default:
         return YAP_PARSER_ERROR;
         break;

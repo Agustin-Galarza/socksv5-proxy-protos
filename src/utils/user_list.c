@@ -24,20 +24,21 @@ user_list_t* user_list_init(size_t capacity) {
 
 static inline void
 free_usr(user_node_t* usr) {
+    if (usr == NULL) return;
     if (usr->username != NULL)
         free(usr->username);
     if (usr->password != NULL)
         free(usr->password);
+    free(usr);
 }
 
 void user_list_free(user_list_t* list) {
     if (list != NULL) {
         user_node_t* curr = list->start;
         while (curr != NULL) {
-            free_usr(curr);
             user_node_t* aux = curr;
             curr = curr->next;
-            free(aux);
+            free_usr(aux);
         }
         free(list);
     }
