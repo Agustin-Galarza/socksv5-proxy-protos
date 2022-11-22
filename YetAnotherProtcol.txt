@@ -51,7 +51,7 @@ Data types supported:
 2. Authentication
 	
 	2.1 Request
-		+--------+--------+--------+
+				+--------+--------+--------+
             	|  VER   | UNAME  | PASSWD |
             	+--------+--------+--------+
             	| '0x01' | string | string | 
@@ -63,7 +63,7 @@ Data types supported:
 			- PASSWD: password 
 
 	2.2 Response
-		+--------+--------+
+				+--------+--------+
             	|  VER   | STATUS | 
             	+--------+--------+
             	| '0x01' | u_int8 | 
@@ -78,7 +78,7 @@ Data types supported:
 
 3. General - Commands
 
-	After a successful authentication, the client then proceeds to send command requests. The general form of these commands is a comand number (CMD), optionally followed by one or more arguments.
+	After a successful authentication, the client then proceeds to send command requests. The general form of these commands is a command number (CMD), optionally followed by one or more arguments.
 	In case of an error the server returns two bytes full with ones, that is '0xFF''0XFF'.
 	
 	3.1 Users

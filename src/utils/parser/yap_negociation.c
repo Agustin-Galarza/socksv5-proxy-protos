@@ -13,7 +13,7 @@ struct yap_negociation_parser* yap_negociation_parser_init() {
 enum yap_negociation_result request_yap_negociation_parser_feed(struct yap_negociation_parser* parser, uint8_t byte) {
     switch (parser->state) {
     case YAP_NEGOCIATION_PARSER_VERSION:
-        if (byte == VERSION) {
+        if (byte == YAP_VERSION) {
             parser->state = YAP_NEGOCIATION_PARSER_USERNAME;
             log_debug("YAP_NEGOCIATION_PARSER_VERSION");
             return YAP_NEGOCIATION_INCOMPLETE;

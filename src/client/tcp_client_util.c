@@ -12,13 +12,19 @@
 
 #define MAX_USER_LIST_SIZE 131072
 
-char* commands[] = { "ul", "m", "au", "ru", "c" };
-char* cmd_description[] = {
+char* yap_commands[] = { "ul", "m", "au", "ru", "c" };
+char* yap_cmd_description[] = {
     "ul - Get User List",
     "m  - Select from a list of metrics",
     "au - Add User",
     "ru - Remove User",
     "c  - Select from a list of configurations"
+};
+
+char* socks_commands[] = { "curl", "pop3" };
+char* socks_cmd_description[] = {
+    "curl   - Transfer url to SOCKSv5",
+    "pop3   - Generic request to port 110"
 };
 
 
@@ -34,7 +40,8 @@ char* available_config[] = {
 };
 
 char* builtin_names[] = { "help", "quit" };
-void (*builtin[])(int) = { handle_help, handle_quit };
+void (*builtin_yap[])(int) = { handle_help_yap, handle_quit };
+void (*builtin_socks[])(int) = { handle_help_socks, handle_quit };
 
 
 int connect_to_ipv4(struct sockaddr_in* ipv4_address, unsigned short port, char* address) {
@@ -149,7 +156,7 @@ int ask_metric(uint8_t* metric) {
     return *metric;
 }
 
-int ask_command(int socket, struct yap_parser* parser) {
+int ask_command_yap(int sock_fd, struct yap_parser* parser) {
     char cmd[COMMAND_LEN];
     printf("$> ");
 
@@ -163,7 +170,7 @@ int ask_command(int socket, struct yap_parser* parser) {
     char* end = strchr((char*)cmd, '\n');
     if (end == NULL) {
         printf("Invalid command\n");
-        handle_help();
+        handle_help_yap();
         while (getc(stdin) != '\n');
         return 0;
     }
@@ -172,14 +179,14 @@ int ask_command(int socket, struct yap_parser* parser) {
 
     for (int i = 0; i < BUILTIN_TOTAL; i++) {
         if (!strcmp(builtin_names[i], cmd)) {
-            builtin[i](socket);
+            builtin_yap[i](sock_fd);
             return 1;
         }
     }
 
     uint8_t command = 0;
-    for (int i = 0; i < CMD_TOTAL; i++) {
-        if (strcmp(commands[i], cmd) == 0) {
+    for (int i = 0; i < YAP_CMD_TOTAL; i++) {
+        if (strcmp(yap_commands[i], cmd) == 0) {
             command = i + 1;
             break;
         }
@@ -187,34 +194,165 @@ int ask_command(int socket, struct yap_parser* parser) {
 
     if (command == 0) {
         printf("Invalid command: %s\n", cmd);
-        handle_help();
+        handle_help_yap();
         return 0;
     }
 
     parser->command = 0;
 
     enum yap_result res = yap_parser_feed(parser, command);
-    return print_response(parser, socket);
+    return print_response(parser, sock_fd);
+}
+
+int ask_command_socks(int sock_fd, struct n_conf* parser) {
+    char cmd[COMMAND_LEN];
+    printf("$> ");
+
+    fflush(stdout);
+
+    if (!fgets((char*)cmd, COMMAND_LEN, stdin))
+        return -1;
+
+    char* end = strchr((char*)cmd, '\n');
+    if (end == NULL) {
+        printf("Invalid command\n");
+        handle_help_socks();
+        while (getc(stdin) != '\n');
+        return 0;
+    }
+    else
+        cmd[end - (char*)cmd] = 0;
+
+    for (int i = 0; i < BUILTIN_TOTAL; i++) {
+        if (!strcmp(builtin_names[i], cmd)) {
+            builtin_socks[i](sock_fd);
+            return 1;
+        }
+    }
+
+    uint8_t command = 0;
+
+
+    parser->cmd = 1;
+    parser->version = 5;
+    parser->rsv = 0;
+
+    if (strcmp(cmd, "curl") == 0)
+        print_curl(sock_fd, parser);
+    else if (strcmp(cmd, "pop3") == 0)
+        print_pop3(sock_fd, parser);
+    else {
+        printf("Invalid command: %s\n", cmd);
+        handle_help_socks();
+        return 0;
+    }
+    if (send(sock_fd, &parser->version, 1, 0) <= 0)
+        return -1;
+
+    if (send(sock_fd, &parser->cmd, 1, 0) <= 0)
+        return -1;
+
+    if (send(sock_fd, &parser->rsv, 1, 0) <= 0)
+        return -1;
+
+    if (send(sock_fd, &parser->atyp, 1, 0) <= 0)
+        return -1;
+
+    int len = strlen(parser->dest_addr);
+
+    if (send(sock_fd, &len, 1, 0) < 0)
+        return -1;
+
+    len = strlen(parser->dest_addr);
+
+    if (send_string(sock_fd, len, (uint8_t*)parser->dest_addr) < 0)
+        return -1;
+
+    free(parser->dest_addr);
+
+    char* buffer = malloc(BUFF_SIZE);
+    buffer[0] = 0;
+    size_t bytes;
+    if (send(sock_fd, &parser->dest_port, 2, 0) < 0)
+        return -1;
+    bytes = read(sock_fd, buffer, BUFF_SIZE);
+
+    sleep(1);
+
+    if (strcmp(cmd, "curl") == 0) {
+        char* str = "GET / HTTP/1.0\n\n";
+        send_string(sock_fd, strlen(str), (uint8_t*)str);
+    }
+
+    bytes = read(sock_fd, buffer, BUFF_SIZE);
+
+
+    while (bytes > 0) {
+        if (bytes < BUFF_SIZE)
+            buffer[bytes] = 0;
+        else if (bytes == BUFF_SIZE)
+            buffer[bytes - 1] = 0;
+        if (bytes > 0)
+            printf("%s\n", buffer);
+        bytes = read(sock_fd, buffer, BUFF_SIZE);
+    }
+
+    free(buffer);
+
+
+
+    return -1;
+}
+
+int ask_protocol(const int argc, char** argv) {
+    int c;
+    while (true) {
+        int option_index = 0;
+
+        c = getopt_long(argc, argv, "YS", NULL, &option_index);
+        if (c == -1)
+            break;
+
+        switch (c) {
+        case 'S':
+            return SOCKS;
+        case 'Y':
+            return YAP;
+
+        default:
+            fprintf(stderr, "unknown argument %d.\n", c);
+            return -1;
+        }
+    }
+    return -1;
+}
+
+void print_socks_welcome_msg() {
+    printf("\n===========================================================\n");
+    printf("Welcome to sock5 proxy configuration.\n\n");
+    printf("Enter \"help\" in the command prompt to see the posible configuration commands.\n");
+    printf("Enter \"quit\" in the command prompt to terminate the session.\n");
+    printf("===========================================================\n");
 }
 
 
 
-int print_response(struct yap_parser* parser, int socket) {
+int print_response(struct yap_parser* parser, int sock_fd) {
     switch (parser->state) {
     case YAP_STATE_USER:
-        return print_user_list(socket, parser);
+        return print_user_list(sock_fd, parser);
 
     case YAP_STATE_METRIC:
-        return print_metric(socket, parser);
+        return print_metric(sock_fd, parser);
 
     case YAP_STATE_ADD_USER:
-        return print_user_command(socket, parser);
+        return print_user_command(sock_fd, parser);
 
     case YAP_STATE_REMOVE_USER:
-        return print_user_command(socket, parser);
+        return print_user_command(sock_fd, parser);
 
     case YAP_STATE_CONFIG:
-        return print_config(socket, parser);
+        return print_config(sock_fd, parser);
     }
 
     return -1;
@@ -222,7 +360,7 @@ int print_response(struct yap_parser* parser, int socket) {
 
 
 
-int print_user_command(int socket, struct yap_parser* parser) {
+int print_user_command(int sock_fd, struct yap_parser* parser) {
 
     struct buffer buf;
     uint8_t buff_raw[BUFF_SIZE * 2 + 3];
@@ -251,11 +389,11 @@ int print_user_command(int socket, struct yap_parser* parser) {
         buffer_write(&buf, password[i]);
 
 
-    if (send(socket, buf.data, 3 + username_len + password_len, 0) < 0)
+    if (send(sock_fd, buf.data, 3 + username_len + password_len, 0) < 0)
         return -1;
 
     char* buffer = malloc(BUFF_SIZE);
-    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
 
     if (bytes == 0) {
         free(buffer);
@@ -299,7 +437,7 @@ int print_user_command(int socket, struct yap_parser* parser) {
     return 0;
 }
 
-int print_metric(int socket, struct yap_parser* parser) {
+int print_metric(int sock_fd, struct yap_parser* parser) {
     handle_metrics();
 
     uint8_t* metric = malloc(BUFF_SIZE);
@@ -317,12 +455,12 @@ int print_metric(int socket, struct yap_parser* parser) {
 
     free(metric);
 
-    if (send_command(socket, parser) < 0) {
+    if (send_command(sock_fd, parser) < 0) {
         return -1;
     }
 
     char* buffer = malloc(BUFF_SIZE);
-    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
 
     if (bytes == 0) {
         free(buffer);
@@ -371,16 +509,16 @@ int print_bytes_sent(char* buffer) {
     return printf("Bytes sent: %d\n", ntohs(val));
 }
 
-int print_user_list(int socket, struct yap_parser* parser) {
+int print_user_list(int sock_fd, struct yap_parser* parser) {
 
     printf("User list:\n");
 
-    if (send_command(socket, parser) < 0) {
+    if (send_command(sock_fd, parser) < 0) {
         return -1;
     }
 
     char* buffer = malloc(MAX_USER_LIST_SIZE);
-    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
 
     if (bytes == 0) {
         free(buffer);
@@ -414,7 +552,7 @@ int print_user_list(int socket, struct yap_parser* parser) {
     return 0;
 }
 
-int print_config(int socket, struct yap_parser* parser) {
+int print_config(int sock_fd, struct yap_parser* parser) {
     handle_config();
 
     uint8_t* config = malloc(BUFF_SIZE);
@@ -441,13 +579,13 @@ int print_config(int socket, struct yap_parser* parser) {
     free(config);
     free(config_value);
 
-    if (send_command(socket, parser) < 0) {
+    if (send_command(sock_fd, parser) < 0) {
         printf("Failed in send\n");
         return -1;
     }
 
     char* buffer = malloc(BUFF_SIZE);
-    size_t bytes = read(socket, buffer, BUFF_SIZE);
+    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
 
     if (bytes == 0) {
         free(buffer);
@@ -501,12 +639,11 @@ int ask_config(uint8_t* config, uint8_t* config_value) {
     int i;
     int arg2_start = 0;
     int arg2_end = 0;
-    uint8_t* arg1 = buffer, * arg2;
+    uint8_t* arg1 = buffer;
     int len = strlen((char*)buffer);
     for (i = 0; i < len; i++) {
         if (buffer[i] == ' ') {
             buffer[i] = 0;
-            arg2 = buffer + i + 1;
             arg2_start = i + 1;
             found_cmd++;
         }
@@ -529,34 +666,34 @@ int ask_config(uint8_t* config, uint8_t* config_value) {
 }
 
 
-int send_credentials(int socket_fd, uint8_t* username, uint8_t* password) {
+int send_credentials(int sock_fd, uint8_t* username, uint8_t* password) {
     uint8_t ulen = strlen((char*)username);
     uint8_t plen = strlen((char*)password);
     uint8_t version = 1;
 
-    if (send(socket_fd, &version, 1, 0) <= 0)
+    if (send(sock_fd, &version, 1, 0) <= 0)
         return -1;
 
-    if (send(socket_fd, &ulen, 1, 0) <= 0)
+    if (send(sock_fd, &ulen, 1, 0) <= 0)
         return -1;
 
-    if (send_string(socket_fd, ulen, username) < 0)
+    if (send_string(sock_fd, ulen, username) < 0)
         return -1;
 
-    if (send(socket_fd, &plen, 1, 0) <= 0)
+    if (send(sock_fd, &plen, 1, 0) <= 0)
         return -1;
 
-    if (send_string(socket_fd, plen, password) < 0)
+    if (send_string(sock_fd, plen, password) < 0)
         return -1;
 
     return 0;
 }
 
 
-int send_string(uint8_t socket_fd, uint8_t len, uint8_t* array) {
+int send_string(uint8_t sock_fd, uint8_t len, uint8_t* array) {
     while (len > 0) {
         int ret;
-        if ((ret = send(socket_fd, array, len, 0)) <= 0)
+        if ((ret = send(sock_fd, array, len, 0)) <= 0)
             return -1;
         len -= ret;
         array += ret;
@@ -576,7 +713,6 @@ int send_command(int sock_fd, struct yap_parser* parser) {
         break;
     case YAP_COMMANDS_METRICS:
         res = send(sock_fd, &parser->metric, 1, 0);
-        // res = send(sock_fd, &parser->metric, 1, 0);
         break;
     case YAP_COMMANDS_ADD_USER:
         res = send(sock_fd, &parser->username, parser->username_length, 0);
@@ -588,6 +724,8 @@ int send_command(int sock_fd, struct yap_parser* parser) {
         res = send(sock_fd, &parser->username, parser->username_length, 0);
         if (res < 0)
             break;
+        res = send(sock_fd, &parser->password, parser->password_length, 0);
+        break;
         res = send(sock_fd, &parser->password, parser->password_length, 0);
         break;
     case YAP_COMMANDS_CONFIG:
@@ -604,10 +742,10 @@ int send_command(int sock_fd, struct yap_parser* parser) {
     return 0;
 }
 
-static int send_array(uint8_t socket_fd, uint8_t len, uint8_t* array) {
+static int send_array(uint8_t sock_fd, uint8_t len, uint8_t* array) {
     while (len > 0) {
         int ret;
-        if ((ret = send(socket_fd, array, len, 0)) <= 0)
+        if ((ret = send(sock_fd, array, len, 0)) <= 0)
             return -1;
         len -= ret;
         array += ret;
@@ -617,9 +755,9 @@ static int send_array(uint8_t socket_fd, uint8_t len, uint8_t* array) {
 
 
 void print_status(uint16_t status) {
-    if (status == 0xC001)
+    if (status == SUCCESS_AUTH)
         print_welcome();
-    else if (status == 0x4B1D)
+    else if (status == FAILED_AUTH)
         printf("Invalid credentials, please try again");
     else {
         printf("Please enter valid credentials");
@@ -627,24 +765,30 @@ void print_status(uint16_t status) {
 }
 
 
-int close_connection(int socket_fd) {
+int close_connection(int sock_fd) {
     printf("Closing connection...\n");
-    return close(socket_fd);
+    return close(sock_fd);
 }
 
 void print_welcome() {
     printf("\n===========================================================\n");
-    printf("Welcome to sock5 proxy configuration.\n\n");
+    printf("Welcome to Yet Another Protocol configuration.\n\n");
     printf("Enter \"help\" in the command prompt to see the posible configuration commands.\n");
     printf("Enter \"quit\" in the command prompt to terminate the session.\n");
     printf("===========================================================\n");
 }
 
 
-void handle_help() {
+void handle_help_yap() {
     printf("\nList of supported commands:\n");
-    for (int i = 0; i < CMD_TOTAL; i++)
-        printf("%s\n", cmd_description[i]);
+    for (int i = 0; i < YAP_CMD_TOTAL; i++)
+        printf("%s\n", yap_cmd_description[i]);
+}
+
+void handle_help_socks() {
+    printf("\nList of supported commands:\n");
+    for (int i = 0; i < SOCKS_CMD_TOTAL; i++)
+        printf("%s\n", socks_cmd_description[i]);
 }
 
 void handle_input(uint8_t* input) {
@@ -681,4 +825,112 @@ void handle_config() {
 void handle_quit(int sock_fd) {
     close_connection(sock_fd);
     exit(0);
+}
+
+int send_socks_credentials(int sock_fd, struct auth_negociation_parser* parser) {
+    parser->version = 1;
+    if (send(sock_fd, &parser->version, 1, 0) <= 0)
+        return -1;
+
+    if (send(sock_fd, &parser->username_length, 1, 0) <= 0)
+        return -1;
+
+    if (send_string(sock_fd, parser->username_length, parser->username) < 0)
+        return -1;
+
+    if (send(sock_fd, &parser->password_length, 1, 0) <= 0)
+        return -1;
+
+    if (send_string(sock_fd, parser->password_length, parser->password) < 0)
+        return -1;
+
+    char* buffer = malloc(BUFF_SIZE);
+    size_t bytes = read(sock_fd, buffer, BUFF_SIZE);
+    free(buffer);
+
+    return 0;
+}
+
+int print_curl(int sock_fd, struct n_conf* parser) {
+    char* buffer = malloc(BUFF_SIZE);
+    printf("Enter address type (<4> for IPv4; <DN> for Domain Name; <6> for IPv6): ");
+    fflush(stdout);
+    if (!fgets((char*)buffer, BUFF_SIZE, stdin))
+        return -1;
+
+    if (*buffer == '\n')
+        return -1;
+
+    char* end = strchr((char*)buffer, '\n');
+    if (end == NULL) {
+        while (getc(stdin) != '\n');
+        return -1;
+    }
+    else
+        buffer[end - (char*)buffer] = 0;
+
+    if (strcmp(buffer, "4") == 0)
+        parser->atyp = 1;
+    else if (strcmp(buffer, "DN") == 0)
+        parser->atyp = 3;
+    else if (strcmp(buffer, "6") == 0)
+        parser->atyp = 4;
+    else {
+        printf("Unknown command. Please try again.\n");
+        return 0;
+    }
+
+    free(buffer);
+
+    buffer = malloc(BUFF_SIZE);
+    printf("Enter destination port: ");
+    fflush(stdout);
+    if (!fgets((char*)buffer, BUFF_SIZE, stdin))
+        return -1;
+
+    if (*buffer == '\n')
+        return -1;
+
+    end = strchr((char*)buffer, '\n');
+    if (end == NULL) {
+        while (getc(stdin) != '\n');
+        return -1;
+    }
+    else
+        buffer[end - (char*)buffer] = 0;
+
+    parser->dest_port = htons(atoi(buffer));
+
+    free(buffer);
+
+    buffer = malloc(BUFF_SIZE);
+    printf("Enter address or domain name: ");
+    fflush(stdout);
+    if (!fgets((char*)buffer, BUFF_SIZE, stdin))
+        return -1;
+
+    if (*buffer == '\n')
+        return -1;
+
+    end = strchr((char*)buffer, '\n');
+    if (end == NULL) {
+        while (getc(stdin) != '\n');
+        return -1;
+    }
+    else
+        buffer[end - (char*)buffer] = 0;
+
+    parser->dest_addr = malloc(strlen(buffer) + 10);
+    strcpy(parser->dest_addr, buffer);
+
+    free(buffer);
+
+    return 0;
+}
+
+int print_pop3(int sock_fd, struct n_conf* parser) {
+    parser->dest_addr = "127.0.0.1";
+    parser->dest_port = htons(110);
+    parser->atyp = 3;
+    return 0;
 }

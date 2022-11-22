@@ -22,7 +22,7 @@ port(const char* s) {
     return (unsigned short)sl;
 }
 
-static void
+void
 user(char* s, struct users* user) {
     char* p = strchr(s, ':');
     if (p == NULL) {

@@ -333,7 +333,6 @@ void admin_server_handle_read(struct selector_key* key) {
 
     if (data->client_count == data->max_clients) {
         // there's no more capacity for new connections
-        log_warning("Refused new connection, max capacity of admins reached");
     }
     else {
         socket_descriptor new_admin = accept_new_connection(server_socket);

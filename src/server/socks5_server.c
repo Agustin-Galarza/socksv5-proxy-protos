@@ -1013,8 +1013,6 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
     server_metrics.historic_connections++;
     server_metrics.concurrent_connections++;
 
-    log_info("New client connected: %s", client->to_str);
-
     client->parser = request_parser_init();
     client->fd = &GET_DATA(key)->client_fd;
     client->read_buffer = GET_DATA(key)->read_buffer;
@@ -1023,6 +1021,8 @@ static void address_req_init(const unsigned state, struct selector_key* key) {
     client->to_str = GET_DATA(key)->client_str;
     client->resolved_addresses_list = &GET_DATA(key)->resolved_addresses_list;
     client->selector = &GET_DATA(key)->selector;
+
+    log_info("New client connected: %s", client->to_str);
 
     selector_set_interest_key(key, OP_READ);
 }
